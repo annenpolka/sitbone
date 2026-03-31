@@ -515,60 +515,50 @@ struct WingShape: Shape {
     }
 }
 
-// MARK: - Compact River Row (notch幅に収まるミニスライダー)
+// MARK: - Compact River Row (2値トグル: FLOW/DRIFT)
 
 struct CompactRiverRow: View {
     @ObservedObject var app: AppClassification
 
+    private var isFlow: Bool { app.flowScore > 0 }
+
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
+            // アプリ名
             Text(app.id)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
-                .frame(width: 52, alignment: .trailing)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
 
-            // ミニスライダー（タップ + ドラッグで編集）
-            GeometryReader { geo in
-                let w = geo.size.width
-                let center = w / 2
-                let pos = center + CGFloat(app.flowScore) * center
+            Spacer(minLength: 0)
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.white.opacity(0.05))
-                    Rectangle()
-                        .fill(.white.opacity(0.08))
-                        .frame(width: 0.5)
-                    let barStart = min(center, pos)
-                    let barW = abs(pos - center)
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(dotColor.opacity(0.3))
-                        .frame(width: max(1, barW), height: 6)
-                        .position(x: barStart + barW / 2, y: geo.size.height / 2)
-                    Circle()
-                        .fill(dotColor)
-                        .frame(width: 8, height: 8)
-                        .shadow(color: dotColor.opacity(0.4), radius: 2)
-                        .position(x: pos, y: geo.size.height / 2)
+            // FLOW/DRIFTトグル
+            HStack(spacing: 0) {
+                toggleButton("FLOW", isSelected: isFlow, color: Color.sitboneFlow) {
+                    app.flowScore = 0.9
                 }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            let s = (value.location.x - center) / center
-                            app.flowScore = max(-1, min(1, Double(s)))
-                        }
-                )
+                toggleButton("DRIFT", isSelected: !isFlow, color: Color.sitboneDrift) {
+                    app.flowScore = -0.9
+                }
             }
-            .frame(height: 14)
+            .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.05)))
         }
+        .padding(.vertical, 1)
     }
 
-    private var dotColor: Color {
-        if app.flowScore > 0.2 { return Color.sitboneFlow }
-        if app.flowScore < -0.2 { return Color.sitboneDrift }
-        return .white.opacity(0.4)
+    private func toggleButton(_ label: String, isSelected: Bool, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(isSelected ? color : .white.opacity(0.2))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isSelected ? color.opacity(0.15) : .clear)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 
