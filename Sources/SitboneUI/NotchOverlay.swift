@@ -248,10 +248,10 @@ struct LeftWing: View {
 
             if engine.isSessionActive {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(phaseColor)
+                    .fill(profilePhaseColor)
                     .frame(width: 2.5, height: height * 0.4)
-                    .shadow(color: phaseColor, radius: 8)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
+                    .shadow(color: profilePhaseColor, radius: 8)
+                    .shadow(color: profilePhaseColor.opacity(0.5), radius: 3)
                     .padding(.leading, 3)
                     .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
@@ -277,8 +277,14 @@ struct LeftWing: View {
         }
     }
 
-    private var phaseColor: Color {
-        engine.focusState?.phase.color ?? .gray
+    /// プロファイルカラー × 状態: FLOW=明るい、DRIFT=暗い脈動、AWAY=gray
+    private var profilePhaseColor: Color {
+        let hue = engine.activeProfile.colorHue
+        switch engine.focusState?.phase {
+        case .flow: return Color(hue: hue, saturation: 0.7, brightness: 0.9)
+        case .drift: return Color(hue: hue, saturation: 0.5, brightness: 0.5)
+        case .away, nil: return .gray
+        }
     }
 }
 
@@ -294,10 +300,10 @@ struct RightWing: View {
 
             if engine.isSessionActive {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(phaseColor)
+                    .fill(profilePhaseColor)
                     .frame(width: 2.5, height: height * 0.4)
-                    .shadow(color: phaseColor, radius: 8)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
+                    .shadow(color: profilePhaseColor, radius: 8)
+                    .shadow(color: profilePhaseColor.opacity(0.5), radius: 3)
                     .padding(.trailing, 3)
                     .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
@@ -323,8 +329,13 @@ struct RightWing: View {
         }
     }
 
-    private var phaseColor: Color {
-        engine.focusState?.phase.color ?? .gray
+    private var profilePhaseColor: Color {
+        let hue = engine.activeProfile.colorHue
+        switch engine.focusState?.phase {
+        case .flow: return Color(hue: hue, saturation: 0.7, brightness: 0.9)
+        case .drift: return Color(hue: hue, saturation: 0.5, brightness: 0.5)
+        case .away, nil: return .gray
+        }
     }
 }
 
@@ -372,8 +383,17 @@ struct NotchDropdown: View {
         }
     }
 
+    @State private var showNewProfileInput = false
+    @State private var newProfileName = ""
+
     private var dropdownContent: some View {
         VStack(spacing: 0) {
+            // Profile Pills（最上段）
+            profilePills
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 4)
+
             if showRiver {
                 riverContent
             } else {
@@ -392,6 +412,69 @@ struct NotchDropdown: View {
             .padding(.top, -50)
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showRiver)
+    }
+
+    // MARK: Profile Pills
+
+    private var profilePills: some View {
+        HStack(spacing: 4) {
+            ForEach(engine.profiles) { profile in
+                let isActive = profile.id == engine.activeProfile.id
+                Button {
+                    if !isActive {
+                        engine.switchProfile(to: profile)
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color(hue: profile.colorHue, saturation: 0.7, brightness: isActive ? 0.9 : 0.4))
+                            .frame(width: 5, height: 5)
+                        Text(profile.name)
+                            .font(.system(size: 8, weight: isActive ? .bold : .regular))
+                            .foregroundStyle(isActive ? .white : .white.opacity(0.35))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(isActive
+                                  ? Color(hue: profile.colorHue, saturation: 0.5, brightness: 0.3)
+                                  : .white.opacity(0.05))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            // [+] 新規作成ボタン
+            if showNewProfileInput {
+                TextField("name", text: $newProfileName)
+                    .font(.system(size: 8))
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(.white)
+                    .frame(width: 50)
+                    .onSubmit {
+                        if !newProfileName.isEmpty {
+                            let p = engine.createProfile(name: newProfileName)
+                            engine.switchProfile(to: p)
+                            newProfileName = ""
+                        }
+                        showNewProfileInput = false
+                    }
+            } else {
+                Button {
+                    showNewProfileInput = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.25))
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(.white.opacity(0.05)))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 
     // MARK: Stats view

@@ -41,7 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             // 永続データをロード
+            engine.loadProfiles()
             engine.loadClassifications()
+            engine.migrateClassifications()  // 旧形式のマイグレーション
             engine.loadCumulativeData()
 
             let controller = NotchOverlayController(engine: engine)
