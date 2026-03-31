@@ -366,9 +366,15 @@ struct NotchDropdown: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .onHover { hovering in
+            // Ghost Teacher表示中はドロップダウンのホバーを無視
+            guard engine.pendingGhostTeacher == nil else {
+                if isHovering {
+                    withAnimation { isHovering = false; showRiver = false }
+                }
+                return
+            }
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 isHovering = hovering
-                // ホバー外したらリバーを閉じて統計に戻る
                 if !hovering {
                     showRiver = false
                 }
