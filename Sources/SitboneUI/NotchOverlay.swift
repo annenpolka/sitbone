@@ -93,8 +93,8 @@ public final class NotchOverlayController {
             interactive: false
         )
 
-        // 右翼: DRIFT時にdrift時間を表示するため幅を大きめに確保
-        let rightWingWidth: CGFloat = 80
+        // 右翼: DRIFT時のみ表示。時間が切れないよう十分な幅
+        let rightWingWidth: CGFloat = 100
         rightPanel = makePanel(
             frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: rightWingWidth, height: h),
             content: RightWing(engine: engine, height: h, overlapInto: overlapInto),
