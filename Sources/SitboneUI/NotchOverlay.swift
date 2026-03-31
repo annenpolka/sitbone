@@ -310,7 +310,7 @@ struct RightWing: View {
                         WingShape(side: .right).fill(.black)
 
                         Text(formatCompactTime(driftDuration))
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.sitboneDrift.opacity(0.9))
                             .fixedSize()
                             .padding(.leading, 1)
