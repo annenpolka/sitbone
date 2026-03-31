@@ -81,8 +81,8 @@ public final class NotchOverlayController {
         let geo = NotchGeometry.detect()
         self.geo = geo
 
-        // 左翼: コンパクト (notch直左)
-        let wingWidth: CGFloat = 80
+        // 左翼: notchに溶け込むミニマルな翼
+        let wingWidth: CGFloat = 36
         let h = geo.notchHeight
         leftPanel = makePanel(
             frame: NSRect(x: geo.notchLeft - wingWidth, y: geo.notchBottomY, width: wingWidth, height: h),
@@ -153,29 +153,27 @@ final class HoverState: ObservableObject {
     @Published var isHovering = false
 }
 
-// MARK: - Left Wing (コンパクト: ドット + 時間)
+// MARK: - Left Wing (notchに溶け込むグローライン)
 
 struct LeftWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
 
     var body: some View {
-        HStack(spacing: 4) {
-            Spacer(minLength: 0)
+        ZStack(alignment: .trailing) {
+            // 黒い翼（notchと一体化）
+            WingShape(side: .left).fill(.black)
+
+            // セッション中: notch側端に状態色のグローライン
             if engine.isSessionActive {
-                Circle()
-                    .fill(phaseColor)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 2)
-                Text(formatCompactTime(engine.focusedElapsed))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.8))
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(phaseColor.opacity(0.6))
+                    .frame(width: 2, height: height * 0.5)
+                    .shadow(color: phaseColor.opacity(0.4), radius: 4)
+                    .padding(.trailing, 1)
             }
         }
-        .padding(.trailing, 6)
-        .padding(.leading, 8)
         .frame(height: height)
-        .background(WingShape(side: .left).fill(.black.opacity(0.85)))
     }
 
     private var phaseColor: Color {
@@ -183,25 +181,29 @@ struct LeftWing: View {
     }
 }
 
-// MARK: - Right Wing (コンパクト: Ratio)
+// MARK: - Right Wing (notchに溶け込むグローライン)
 
 struct RightWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
 
     var body: some View {
-        HStack(spacing: 4) {
+        ZStack(alignment: .leading) {
+            WingShape(side: .right).fill(.black)
+
             if engine.isSessionActive {
-                Text("\(Int(engine.focusRatio * 100))%")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.sitboneFlow.opacity(0.8))
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(phaseColor.opacity(0.6))
+                    .frame(width: 2, height: height * 0.5)
+                    .shadow(color: phaseColor.opacity(0.4), radius: 4)
+                    .padding(.leading, 1)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 8)
         .frame(height: height)
-        .background(WingShape(side: .right).fill(.black.opacity(0.85)))
+    }
+
+    private var phaseColor: Color {
+        engine.focusState?.phase.color ?? .gray
     }
 }
 
