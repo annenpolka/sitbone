@@ -172,6 +172,33 @@ final class SiteResolutionTests: XCTestCase {
         XCTAssertNil(result.site)
     }
 
+    // MARK: - Chromeプロファイル名付きタイトル
+
+    func testResolveChromeWithProfile() {
+        let observer = SiteObserver()
+        observer.classify(site: "Twitter", as: .drift)
+
+        let result = SiteResolver.resolve(
+            title: "ホーム / Twitter - Google Chrome - 克臣 (ポルカ)",
+            app: "Google Chrome",
+            observer: observer
+        )
+        // "ホーム / Twitter" → サブセグメント "Twitter" にマッチ
+        XCTAssertEqual(result.site, "Twitter")
+    }
+
+    func testResolveYouTubeWithChromeProfile() {
+        let observer = SiteObserver()
+        observer.classify(site: "YouTube", as: .drift)
+
+        let result = SiteResolver.resolve(
+            title: "動画タイトル - YouTube - Google Chrome - 克臣 (ポルカ)",
+            app: "Google Chrome",
+            observer: observer
+        )
+        XCTAssertEqual(result.site, "YouTube")
+    }
+
     // MARK: - ブラウザアプリ抑制
 
     func testBrowserAppSuppressed() {

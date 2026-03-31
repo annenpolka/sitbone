@@ -108,10 +108,10 @@ public enum SiteResolver {
         // 1. セグメント分割
         var segments = TitleSegmenter.split(title)
 
-        // 2. ブラウザ名を除去
-        if let last = segments.last,
-           last.trimmingCharacters(in: .whitespaces) == app {
-            segments.removeLast()
+        // 2. ブラウザ名とそれ以降を除去
+        //    Chrome: "Page - Google Chrome - ProfileName" のパターン対応
+        if let idx = segments.firstIndex(where: { $0.caseInsensitiveCompare(app) == .orderedSame }) {
+            segments = Array(segments[..<idx])
         }
 
         // 3. ジャンクのみならnil

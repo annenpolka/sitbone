@@ -96,10 +96,13 @@ public final class SiteObserver: @unchecked Sendable {
 
     // MARK: - セグメントマッチ（ADR-0010）
 
-    /// セグメント配列から既知サイトを検索（完全一致、長い名前優先）
+    /// セグメント配列から既知サイトを検索
+    /// 1. 完全一致（最優先、長い名前優先）
+    /// 2. サブセグメント一致（"ホーム / Twitter" → "/" で分割して "Twitter" にマッチ）
     public func findKnownSite(inSegments segments: [String]) -> String? {
-        // 長い名前を先にチェック（"Stack Overflow" > "Stack"）
         let sorted = userClassifications.keys.sorted { $0.count > $1.count }
+
+        // Pass 1: 完全一致
         for site in sorted {
             for segment in segments {
                 if segment.caseInsensitiveCompare(site) == .orderedSame {
@@ -107,6 +110,20 @@ public final class SiteObserver: @unchecked Sendable {
                 }
             }
         }
+
+        // Pass 2: セグメント内のサブ分割（/ 区切り等）で一致
+        for site in sorted {
+            for segment in segments {
+                let subsegments = segment.components(separatedBy: "/")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                for sub in subsegments {
+                    if sub.caseInsensitiveCompare(site) == .orderedSame {
+                        return site
+                    }
+                }
+            }
+        }
+
         return nil
     }
 
