@@ -105,4 +105,46 @@ public final class SiteObserver: @unchecked Sendable {
     public var allSites: [String] {
         Array(Set(entries.keys).union(userClassifications.keys)).sorted()
     }
+
+    // MARK: - 永続化
+
+    /// ユーザー分類を辞書形式でエクスポート
+    public func exportClassifications() -> [String: String] {
+        var result: [String: String] = [:]
+        for (site, classification) in userClassifications {
+            switch classification {
+            case .flow: result[site] = "flow"
+            case .drift: result[site] = "drift"
+            case .undecided: result[site] = "undecided"
+            }
+        }
+        return result
+    }
+
+    /// 辞書形式からユーザー分類をインポート
+    public func importClassifications(_ data: [String: String]) {
+        for (site, value) in data {
+            switch value {
+            case "flow": userClassifications[site] = .flow
+            case "drift": userClassifications[site] = .drift
+            default: userClassifications[site] = .undecided
+            }
+            if entries[site] == nil {
+                entries[site] = SiteEntry()
+            }
+        }
+    }
+
+    /// JSONにシリアライズ
+    public func toJSON() throws -> Data {
+        try JSONSerialization.data(withJSONObject: exportClassifications(), options: .prettyPrinted)
+    }
+
+    /// JSONからロード
+    public func loadJSON(_ data: Data) throws {
+        guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return
+        }
+        importClassifications(dict)
+    }
 }

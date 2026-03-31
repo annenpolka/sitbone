@@ -402,20 +402,31 @@ struct NotchDropdown: View {
             }
 
             if !engine.currentApp.isEmpty {
-                HStack(spacing: 3) {
+                let target = engine.currentSite ?? engine.currentApp
+                let cls = engine.siteObserver.effectiveClassification(for: target)
+                HStack(spacing: 4) {
+                    // 分類バッジ
+                    Circle()
+                        .fill(cls == .flow ? Color.sitboneFlow : cls == .drift ? Color.sitboneDrift : .white.opacity(0.2))
+                        .frame(width: 5, height: 5)
                     Text(engine.currentApp)
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.35))
-                    if !engine.currentWindowTitle.isEmpty
-                        && engine.currentWindowTitle != engine.currentApp {
-                        Text("·")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                    if let site = engine.currentSite, site != engine.currentApp {
+                        Text("· \(site)")
                             .font(.system(size: 8))
-                            .foregroundStyle(.white.opacity(0.15))
-                        Text(engine.currentWindowTitle)
-                            .font(.system(size: 8))
-                            .foregroundStyle(.white.opacity(0.2))
+                            .foregroundStyle(.white.opacity(0.3))
                     }
                     Spacer(minLength: 0)
+                    if cls == .flow {
+                        Text("FLOW")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Color.sitboneFlow.opacity(0.6))
+                    } else if cls == .drift {
+                        Text("DRIFT")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Color.sitboneDrift.opacity(0.6))
+                    }
                 }
                 .lineLimit(1)
                 .truncationMode(.tail)
