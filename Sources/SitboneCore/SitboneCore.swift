@@ -57,6 +57,22 @@ public struct Dependencies: Sendable {
         presenceDetector: MockPresenceDetector(status: .unknown),
         store: InMemorySessionStore()
     )
+
+    public static func test(
+        clock: any ClockProtocol = FixedClock(),
+        windowMonitor: any WindowMonitorProtocol = MockWindowMonitor(),
+        idleDetector: any IdleDetectorProtocol = MockIdleDetector(),
+        presenceDetector: any PresenceDetectorProtocol = MockPresenceDetector(),
+        store: any SessionStoreProtocol = InMemorySessionStore()
+    ) -> Dependencies {
+        Dependencies(
+            clock: clock,
+            windowMonitor: windowMonitor,
+            idleDetector: idleDetector,
+            presenceDetector: presenceDetector,
+            store: store
+        )
+    }
 }
 
 // MARK: - Thresholds
@@ -172,9 +188,14 @@ public final class SessionEngine: ObservableObject {
     @Published public private(set) var currentWindowTitle: String = ""
     @Published public private(set) var currentSite: String?
     @Published public private(set) var pendingGhostTeacher: String?
-    @Published public var cumulativeFocusedHours: Double = 0  // 累積集中時間（時間）
+    @Published public var cumulativeFocusedHours: Double = 0
 
-    public let siteObserver = SiteObserver()
+    // MARK: - プロファイル管理 (ADR-0011)
+    @Published public private(set) var activeProfile: SessionProfile
+    @Published public private(set) var profiles: [SessionProfile]
+    public private(set) var siteObserver: SiteObserver
+    /// プロファイル別SiteObserverのキャッシュ
+    private var siteObservers: [UUID: SiteObserver] = [:]
 
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
@@ -186,6 +207,12 @@ public final class SessionEngine: ObservableObject {
 
     public init(deps: Dependencies) {
         self.deps = deps
+        let defaultProfile = SessionProfile.makeDefault()
+        self.activeProfile = defaultProfile
+        self.profiles = [defaultProfile]
+        let observer = SiteObserver()
+        self.siteObserver = observer
+        self.siteObservers[defaultProfile.id] = observer
         self.machine = FocusStateMachine(deps: deps)
     }
 
@@ -292,14 +319,77 @@ public final class SessionEngine: ObservableObject {
         }
     }
 
+    // MARK: - プロファイル操作
+
+    /// 新規プロファイルを作成
+    @discardableResult
+    public func createProfile(name: String, colorHue: Double = Double.random(in: 0...1)) -> SessionProfile {
+        let profile = SessionProfile(name: name, colorHue: colorHue)
+        profiles.append(profile)
+        siteObservers[profile.id] = SiteObserver()
+        saveProfiles()
+        return profile
+    }
+
+    /// プロファイルを切替（セッション分割）
+    public func switchProfile(to profile: SessionProfile) {
+        guard profiles.contains(where: { $0.id == profile.id }) else { return }
+
+        if persistenceEnabled {
+            saveClassificationsForActiveProfile()
+        }
+
+        if isSessionActive {
+            cumulativeFocusedHours += focusedElapsed / 3600.0
+            if persistenceEnabled { saveCumulativeData() }
+        }
+
+        // プロファイル切替: SiteObserverを差し替え
+        activeProfile = profile
+        let newObserver = siteObservers[profile.id] ?? SiteObserver()
+        siteObserver = newObserver
+        if siteObservers[profile.id] == nil {
+            siteObservers[profile.id] = newObserver
+        }
+
+        // セッションリセット
+        if isSessionActive {
+            let now = deps.clock.now
+            focusState = .flow(since: now)
+            counters = Counters()
+            focusedElapsed = 0
+            totalElapsed = 0
+            sessionStartedAt = now
+            lastTickTime = now
+        }
+
+        if persistenceEnabled {
+            loadClassificationsForProfile(profile)
+        }
+    }
+
+    /// プロファイルを削除（アクティブ・最後の1つは削除不可）
+    public func deleteProfile(_ profile: SessionProfile) {
+        guard profiles.count > 1 else { return }
+        guard profile.id != activeProfile.id else { return }
+        profiles.removeAll { $0.id == profile.id }
+        siteObservers.removeValue(forKey: profile.id)
+        saveProfiles()
+    }
+
     /// Ghost Teacherの回答: サイトをFLOW/DRIFTに分類
     public func classifySite(_ site: String, as classification: SiteSuggestion) {
         siteObserver.classify(site: site, as: classification)
         if pendingGhostTeacher == site {
             pendingGhostTeacher = nil
         }
-        saveClassifications()  // 分類するたびに永続化
+        if persistenceEnabled {
+            saveClassifications()
+        }
     }
+
+    /// テスト用: ファイルI/Oを無効化
+    public var persistenceEnabled: Bool = true
 
     /// Ghost Teacherを無視
     public func dismissGhostTeacher() {
@@ -320,22 +410,72 @@ public final class SessionEngine: ObservableObject {
         return dir
     }()
 
-    private static let classificationsURL: URL = {
-        sitboneDir.appendingPathComponent("classifications.json")
+    private static let profilesURL: URL = {
+        sitboneDir.appendingPathComponent("profiles.json")
     }()
 
     private static let cumulativeURL: URL = {
         sitboneDir.appendingPathComponent("cumulative.json")
     }()
 
+    private func profileDir(for profile: SessionProfile) -> URL {
+        let dir = Self.sitboneDir
+            .appendingPathComponent("profiles", isDirectory: true)
+            .appendingPathComponent(profile.name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    // プロファイル一覧
+
+    public func loadProfiles() {
+        guard let data = try? Data(contentsOf: Self.profilesURL),
+              let decoded = try? JSONDecoder().decode([SessionProfile].self, from: data),
+              !decoded.isEmpty else { return }
+        profiles = decoded
+        activeProfile = decoded[0]
+        // 各プロファイルのSiteObserverを生成
+        for profile in decoded {
+            let observer = SiteObserver()
+            siteObservers[profile.id] = observer
+        }
+        siteObserver = siteObservers[activeProfile.id] ?? SiteObserver()
+    }
+
+    public func saveProfiles() {
+        guard let data = try? JSONEncoder().encode(profiles) else { return }
+        try? data.write(to: Self.profilesURL)
+    }
+
+    // プロファイル別分類
+
     public func loadClassifications() {
-        guard let data = try? Data(contentsOf: Self.classificationsURL) else { return }
+        loadClassificationsForProfile(activeProfile)
+    }
+
+    private func loadClassificationsForProfile(_ profile: SessionProfile) {
+        let url = profileDir(for: profile).appendingPathComponent("classifications.json")
+        guard let data = try? Data(contentsOf: url) else { return }
         try? siteObserver.loadJSON(data)
     }
 
+    /// 旧classifications.jsonをdefaultプロファイルにマイグレーション
+    public func migrateClassifications() {
+        let legacyURL = Self.sitboneDir.appendingPathComponent("classifications.json")
+        guard let data = try? Data(contentsOf: legacyURL) else { return }
+        try? siteObserver.loadJSON(data)
+        saveClassificationsForActiveProfile()
+        try? FileManager.default.removeItem(at: legacyURL)
+    }
+
     public func saveClassifications() {
+        saveClassificationsForActiveProfile()
+    }
+
+    private func saveClassificationsForActiveProfile() {
         guard let data = try? siteObserver.toJSON() else { return }
-        try? data.write(to: Self.classificationsURL)
+        let url = profileDir(for: activeProfile).appendingPathComponent("classifications.json")
+        try? data.write(to: url)
     }
 
     /// 累積データをロード
