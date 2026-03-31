@@ -252,15 +252,10 @@ public final class SessionEngine: ObservableObject {
         currentApp = deps.windowMonitor.frontmostAppName() ?? ""
         currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
-        // アプリ切り替え検出
+        // アプリ切り替え検出 → Ghost Teacher (ADR-0009: デフォルト分類なし)
         if currentApp != prevApp && !currentApp.isEmpty {
             if siteObserver.isNewSite(currentApp) {
-                // ドメインパターンで既知なら自動分類
-                if let defaultClass = WindowTitleParser.defaultClassification(for: currentApp) {
-                    siteObserver.classify(site: currentApp, as: defaultClass)
-                } else {
-                    pendingGhostTeacher = currentApp
-                }
+                pendingGhostTeacher = currentApp
             }
         }
 
@@ -275,11 +270,7 @@ public final class SessionEngine: ObservableObject {
             if currentSite != site {
                 currentSite = site
                 if let site, siteObserver.isNewSite(site) {
-                    if let defaultClass = WindowTitleParser.defaultClassification(for: site) {
-                        siteObserver.classify(site: site, as: defaultClass)
-                    } else {
-                        pendingGhostTeacher = site
-                    }
+                    pendingGhostTeacher = site
                 }
             }
             if let site {
