@@ -93,11 +93,10 @@ public final class NotchOverlayController {
             interactive: false
         )
 
-        // 右翼: DRIFT時のみ表示。notchに密着するようoverlapを大きく
-        let rightWingWidth: CGFloat = 80
+        // 右翼: 左翼と同じグローラインインジケーター
         rightPanel = makePanel(
-            frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: rightWingWidth, height: h),
-            content: RightWing(engine: engine, height: h, overlapInto: overlapInto),
+            frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: totalWidth, height: h),
+            content: RightWing(engine: engine, height: h),
             interactive: false
         )
 
@@ -286,44 +285,42 @@ struct LeftWing: View {
 struct RightWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
-    let overlapInto: CGFloat
     @State private var appeared = false
     @State private var pulseScale: CGFloat = 1.0
 
-    private var isDrift: Bool {
-        engine.focusState?.phase == .drift
-    }
-
-    private var driftDuration: TimeInterval {
-        guard let state = engine.focusState, state.phase == .drift else { return 0 }
-        return Date().timeIntervalSince(state.since)
-    }
-
     var body: some View {
-        Group {
-            if isDrift {
-                HStack(spacing: 0) {
-                    Color.black
-                        .frame(width: overlapInto)
+        ZStack(alignment: .trailing) {
+            WingShape(side: .right).fill(.black)
 
-                    ZStack(alignment: .leading) {
-                        WingShape(side: .right).fill(.black)
-
-                        Text(formatCompactTime(driftDuration))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.sitboneDrift.opacity(0.9))
-                            .fixedSize()
-                            .padding(.leading, 0)
-                    }
-                }
-                .frame(height: height)
-                .transition(.asymmetric(
-                    insertion: .move(edge: .leading).combined(with: .opacity),
-                    removal: .opacity
-                ))
+            if engine.isSessionActive {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(phaseColor)
+                    .frame(width: 2.5, height: height * 0.4)
+                    .shadow(color: phaseColor, radius: 8)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
+                    .padding(.trailing, 3)
+                    .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isDrift)
+        .frame(height: height)
+        .scaleEffect(x: pulseScale, anchor: .leading)
+        .offset(x: appeared ? 0 : -14)
+        .opacity(appeared ? 1 : 0)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.15)) {
+                appeared = true
+            }
+        }
+        .onChange(of: engine.focusState?.phase) { _, newPhase in
+            if newPhase == .drift {
+                withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
+                    pulseScale = 2.5
+                }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.15)) {
+                    pulseScale = 1.0
+                }
+            }
+        }
     }
 
     private var phaseColor: Color {
