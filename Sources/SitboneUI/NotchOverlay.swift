@@ -122,22 +122,13 @@ public final class NotchOverlayController {
         expandPanel.ignoresMouseEvents = false
         self.expandPanel = expandPanel
 
-        // Ghost Teacherバナー: notch直下に独立ポップ
-        let ghostWidth: CGFloat = notchWidth + 40
-        let ghostHeight: CGFloat = 60
-        let ghostX = (geo.notchLeft + geo.notchRight) / 2 - ghostWidth / 2
-        let gp = makePanel(
-            frame: NSRect(x: ghostX, y: geo.notchBottomY - ghostHeight - 4, width: ghostWidth, height: ghostHeight),
-            content: GhostTeacherBanner(engine: engine),
-            interactive: true
-        )
-        gp.ignoresMouseEvents = false
-        self.ghostPanel = gp
+        // Ghost Teacherバナー: フォーカスディスプレイの上端中央に表示
+        setupGhostPanel()
 
         leftPanel?.orderFrontRegardless()
         rightPanel?.orderFrontRegardless()
         expandPanel.orderFrontRegardless()
-        gp.orderFrontRegardless()
+        ghostPanel?.orderFrontRegardless()
     }
 
     public func hide() {
@@ -146,6 +137,49 @@ public final class NotchOverlayController {
     }
 
     public var isVisible: Bool { leftPanel != nil }
+
+    /// Ghost Teacherパネルをフォーカスディスプレイの上端中央に配置
+    private func setupGhostPanel() {
+        ghostPanel?.close()
+        ghostPanel = nil
+
+        // NSScreen.main = フォーカスのあるディスプレイ
+        guard let screen = NSScreen.main else { return }
+        let frame = screen.frame
+        let safe = screen.safeAreaInsets
+        let topY = frame.maxY - safe.top  // メニューバー/notchの下端
+
+        let ghostWidth: CGFloat = 220
+        let ghostHeight: CGFloat = 50
+        let ghostX = frame.midX - ghostWidth / 2
+        let ghostY = topY - ghostHeight - 6
+
+        let gp = makePanel(
+            frame: NSRect(x: ghostX, y: ghostY, width: ghostWidth, height: ghostHeight),
+            content: GhostTeacherBanner(engine: engine, onReposition: { [weak self] in
+                // サイトが変わるたびにフォーカスディスプレイに再配置
+                self?.repositionGhostPanel()
+            }),
+            interactive: true
+        )
+        gp.ignoresMouseEvents = false
+        self.ghostPanel = gp
+    }
+
+    private func repositionGhostPanel() {
+        guard let screen = NSScreen.main, let panel = ghostPanel else { return }
+        let frame = screen.frame
+        let safe = screen.safeAreaInsets
+        let topY = frame.maxY - safe.top
+
+        let ghostWidth: CGFloat = 220
+        let ghostHeight: CGFloat = 50
+        let ghostX = frame.midX - ghostWidth / 2
+        let ghostY = topY - ghostHeight - 6
+
+        panel.setFrame(NSRect(x: ghostX, y: ghostY, width: ghostWidth, height: ghostHeight), display: true)
+        panel.orderFrontRegardless()
+    }
 
     private func makePanel<V: View>(frame: NSRect, content: V, interactive: Bool) -> NSPanel {
         let panel = NSPanel(
@@ -574,6 +608,7 @@ struct LiveRiverRow: View {
 
 struct GhostTeacherBanner: View {
     @ObservedObject var engine: SessionEngine
+    var onReposition: (() -> Void)?
     @State private var visible = false
 
     var body: some View {
@@ -640,8 +675,10 @@ struct GhostTeacherBanner: View {
                 }
                 .onChange(of: engine.pendingGhostTeacher) { _, newSite in
                     if newSite != nil {
+                        // フォーカスディスプレイに再配置してからアニメーション
+                        onReposition?()
                         visible = false
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.1)) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.15)) {
                             visible = true
                         }
                     }
