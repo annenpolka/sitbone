@@ -383,9 +383,6 @@ struct NotchDropdown: View {
         }
     }
 
-    @State private var showNewProfileInput = false
-    @State private var newProfileName = ""
-
     private var dropdownContent: some View {
         VStack(spacing: 0) {
             // Profile Pills（最上段）
@@ -445,33 +442,19 @@ struct NotchDropdown: View {
                 .buttonStyle(.plain)
             }
 
-            // [+] 新規作成ボタン
-            if showNewProfileInput {
-                TextField("name", text: $newProfileName)
-                    .font(.system(size: 8))
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(.white)
-                    .frame(width: 50)
-                    .onSubmit {
-                        if !newProfileName.isEmpty {
-                            let p = engine.createProfile(name: newProfileName)
-                            engine.switchProfile(to: p)
-                            newProfileName = ""
-                        }
-                        showNewProfileInput = false
-                    }
-            } else {
-                Button {
-                    showNewProfileInput = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.25))
-                        .frame(width: 16, height: 16)
-                        .background(Circle().fill(.white.opacity(0.05)))
-                }
-                .buttonStyle(.plain)
+            // [+] 新規作成: ワンタップで自動命名して作成
+            Button {
+                let name = "profile \(engine.profiles.count)"
+                let p = engine.createProfile(name: name)
+                engine.switchProfile(to: p)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.25))
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(.white.opacity(0.05)))
             }
+            .buttonStyle(.plain)
 
             Spacer(minLength: 0)
         }
