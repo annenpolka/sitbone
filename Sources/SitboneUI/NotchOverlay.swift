@@ -257,17 +257,21 @@ struct NotchDropdown: View {
             Color.clear
                 .frame(height: notchHeight)
 
-            // 下部: ドロップダウンパネル（notchの裏からスライドで出現）
+            // 下部: クリップコンテナ（ドロップダウンの上端を隠す）
             if engine.isSessionActive {
-                dropdownContent
-                    .offset(y: isHovering ? 0 : -100)  // 非ホバー時はnotchの裏に隠れる
-                    .opacity(isHovering ? 1 : 0)
+                VStack(spacing: 0) {
+                    dropdownContent
+                        .offset(y: isHovering ? 0 : -120)
+                        .opacity(isHovering ? 1 : 0)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 150)
+                .clipped()  // この枠内だけ描画 → 上にスライド中のコンテンツは見えない
             }
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .clipped()  // notchより上にはみ出さない
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
