@@ -68,6 +68,7 @@ public final class NotchOverlayController {
     private var leftPanel: NSPanel?
     private var rightPanel: NSPanel?
     private var expandPanel: NSPanel?
+    private var ghostPanel: NSPanel?
     private let engine: SessionEngine
     private var geo: NotchGeometry?
     public var onSettingsTap: (() -> Void)?
@@ -121,14 +122,27 @@ public final class NotchOverlayController {
         expandPanel.ignoresMouseEvents = false
         self.expandPanel = expandPanel
 
+        // Ghost Teacherバナー: notch直下に独立ポップ
+        let ghostWidth: CGFloat = notchWidth + 40
+        let ghostHeight: CGFloat = 60
+        let ghostX = (geo.notchLeft + geo.notchRight) / 2 - ghostWidth / 2
+        let gp = makePanel(
+            frame: NSRect(x: ghostX, y: geo.notchBottomY - ghostHeight - 4, width: ghostWidth, height: ghostHeight),
+            content: GhostTeacherBanner(engine: engine),
+            interactive: true
+        )
+        gp.ignoresMouseEvents = false
+        self.ghostPanel = gp
+
         leftPanel?.orderFrontRegardless()
         rightPanel?.orderFrontRegardless()
         expandPanel.orderFrontRegardless()
+        gp.orderFrontRegardless()
     }
 
     public func hide() {
-        leftPanel?.close(); rightPanel?.close(); expandPanel?.close()
-        leftPanel = nil; rightPanel = nil; expandPanel = nil
+        leftPanel?.close(); rightPanel?.close(); expandPanel?.close(); ghostPanel?.close()
+        leftPanel = nil; rightPanel = nil; expandPanel = nil; ghostPanel = nil
     }
 
     public var isVisible: Bool { leftPanel != nil }
@@ -333,41 +347,6 @@ struct NotchDropdown: View {
                     .background(phaseColor.opacity(0.15))
                     .clipShape(Capsule())
                     .fixedSize()
-            }
-
-            // Ghost Teacher: 未分類サイトのインライン質問
-            if let site = engine.pendingGhostTeacher {
-                HStack(spacing: 4) {
-                    Text(site)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                    Text("→")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.3))
-                    Button("FLOW") {
-                        engine.classifySite(site, as: .flow)
-                    }
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Color.sitboneFlow)
-                    .buttonStyle(.plain)
-                    Button("DRIFT") {
-                        engine.classifySite(site, as: .drift)
-                    }
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Color.sitboneDrift)
-                    .buttonStyle(.plain)
-                    Spacer(minLength: 0)
-                    Button("×") {
-                        engine.dismissGhostTeacher()
-                    }
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .buttonStyle(.plain)
-                }
-                .padding(.vertical, 3)
-                .padding(.horizontal, 6)
-                .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.06)))
             }
 
             GeometryReader { geo in
@@ -588,6 +567,88 @@ struct LiveRiverRow: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Ghost Teacher Banner (notch下にぴょこっと出る)
+
+struct GhostTeacherBanner: View {
+    @ObservedObject var engine: SessionEngine
+    @State private var visible = false
+
+    var body: some View {
+        VStack {
+            Spacer(minLength: 0)
+
+            if let site = engine.pendingGhostTeacher {
+                HStack(spacing: 8) {
+                    Text(site)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        withAnimation { engine.classifySite(site, as: .flow) }
+                    } label: {
+                        Text("FLOW")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.sitboneFlow)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.sitboneFlow.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation { engine.classifySite(site, as: .drift) }
+                    } label: {
+                        Text("DRIFT")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.sitboneDrift)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.sitboneDrift.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation { engine.dismissGhostTeacher() }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.black.opacity(0.92))
+                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                )
+                .offset(y: visible ? 0 : -30)
+                .opacity(visible ? 1 : 0)
+                .onAppear {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        visible = true
+                    }
+                }
+                .onChange(of: engine.pendingGhostTeacher) { _, newSite in
+                    if newSite != nil {
+                        visible = false
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.1)) {
+                            visible = true
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
