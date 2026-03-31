@@ -154,6 +154,9 @@ public final class SessionEngine: ObservableObject {
     @Published public private(set) var focusedElapsed: TimeInterval = 0
     @Published public private(set) var totalElapsed: TimeInterval = 0
 
+    /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
+    public var onDriftEntered: (() -> Void)?
+
     private let deps: Dependencies
     private let machine: FocusStateMachine
     private var tickTask: Task<Void, Never>?
@@ -203,11 +206,18 @@ public final class SessionEngine: ObservableObject {
         }
         lastTickTime = now
 
+        let oldPhase = state.phase
         let (newState, newCounters) = await machine.tick(
             current: state, counters: counters
         )
+        let newPhase = newState.phase
         focusState = newState
         counters = newCounters
+
+        // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)
+        if oldPhase == .flow && newPhase == .drift {
+            onDriftEntered?()
+        }
     }
 
     public var focusRatio: Double {

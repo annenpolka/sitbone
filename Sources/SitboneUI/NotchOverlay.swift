@@ -81,8 +81,8 @@ public final class NotchOverlayController {
         let geo = NotchGeometry.detect()
         self.geo = geo
 
-        // 左翼: notchに溶け込むミニマルな翼
-        let wingWidth: CGFloat = 36
+        // 左翼: notchに溶け込むミニマルな翼（グローインジケーターに合わせた最小幅）
+        let wingWidth: CGFloat = 20
         let h = geo.notchHeight
         leftPanel = makePanel(
             frame: NSRect(x: geo.notchLeft - wingWidth, y: geo.notchBottomY, width: wingWidth, height: h),
@@ -175,7 +175,7 @@ struct LeftWing: View {
         }
         .frame(height: height)
         // notchの中から左にスライドして出現
-        .offset(x: appeared ? 0 : 36)
+        .offset(x: appeared ? 0 : 20)
         .opacity(appeared ? 1 : 0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.1)) {
@@ -210,7 +210,7 @@ struct RightWing: View {
         }
         .frame(height: height)
         // notchの中から右にスライドして出現
-        .offset(x: appeared ? 0 : -36)
+        .offset(x: appeared ? 0 : -20)
         .opacity(appeared ? 1 : 0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.15)) {

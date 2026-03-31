@@ -52,6 +52,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let autoStart = CommandLine.arguments.contains("--auto-start")
             #endif
 
+            // DRIFT効果音 (ADR-0007)
+            engine.onDriftEntered = {
+                NSSound(named: "Tink")?.play()
+            }
+
             if autoStart {
                 engine.startSession()
             }
