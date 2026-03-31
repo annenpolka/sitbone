@@ -440,9 +440,6 @@ struct NotchDropdown: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .onLongPressGesture {
-                    renameProfile(profile)
-                }
             }
 
             // [+] 新規作成: ワンタップで自動命名して作成
@@ -603,26 +600,6 @@ struct NotchDropdown: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-    }
-
-    private func renameProfile(_ profile: SessionProfile) {
-        let alert = NSAlert()
-        alert.messageText = "Rename Profile"
-        alert.informativeText = "Enter new name for \"\(profile.name)\":"
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        input.stringValue = profile.name
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let newName = input.stringValue.trimmingCharacters(in: .whitespaces)
-            if !newName.isEmpty {
-                engine.renameProfile(profile, to: newName)
-            }
-        }
     }
 
     private func counterItem(_ symbol: String, _ count: Int, _ color: Color) -> some View {

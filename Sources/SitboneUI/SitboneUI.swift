@@ -45,6 +45,8 @@ public struct MenuBarView: View {
             }
 
             Divider()
+            profileSection
+            Divider()
             sessionToggle
             Divider()
 
@@ -162,6 +164,93 @@ public struct MenuBarView: View {
             Text("No active session")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @State private var editingProfileId: UUID?
+    @State private var editName: String = ""
+
+    private var profileSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Profiles")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            ForEach(engine.profiles) { profile in
+                let isActive = profile.id == engine.activeProfile.id
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color(hue: profile.colorHue, saturation: 0.7, brightness: isActive ? 0.9 : 0.4))
+                        .frame(width: 8, height: 8)
+
+                    if editingProfileId == profile.id {
+                        TextField("name", text: $editName)
+                            .font(.caption)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                if !editName.isEmpty {
+                                    engine.renameProfile(profile, to: editName)
+                                }
+                                editingProfileId = nil
+                            }
+                    } else {
+                        Text(profile.name)
+                            .font(.caption)
+                            .foregroundStyle(isActive ? .primary : .secondary)
+
+                        Spacer()
+
+                        if !isActive {
+                            Button("Switch") {
+                                engine.switchProfile(to: profile)
+                            }
+                            .font(.caption)
+                        } else {
+                            Text("active")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        // 編集ボタン
+                        Button {
+                            editingProfileId = profile.id
+                            editName = profile.name
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        // 削除（アクティブでなければ）
+                        if !isActive && engine.profiles.count > 1 {
+                            Button {
+                                engine.deleteProfile(profile)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.red.opacity(0.5))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            // 新規作成
+            Button {
+                let name = "profile \(engine.profiles.count)"
+                let p = engine.createProfile(name: name)
+                editingProfileId = p.id
+                editName = name
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus.circle")
+                        .font(.caption)
+                    Text("New Profile")
+                        .font(.caption)
+                }
+            }
         }
     }
 
