@@ -156,9 +156,10 @@ struct LeftWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
     @State private var appeared = false
+    @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
-        ZStack(alignment: .leading) {  // グローを外側（左端）に
+        ZStack(alignment: .leading) {
             WingShape(side: .left).fill(.black)
 
             if engine.isSessionActive {
@@ -171,11 +172,23 @@ struct LeftWing: View {
             }
         }
         .frame(height: height)
+        .scaleEffect(x: pulseScale, anchor: .trailing)  // notch側を基点に横に伸びる
         .offset(x: appeared ? 0 : 14)
         .opacity(appeared ? 1 : 0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.1)) {
                 appeared = true
+            }
+        }
+        .onChange(of: engine.focusState?.phase) { _, newPhase in
+            if newPhase == .drift {
+                // DRIFT突入: 翼が一瞬広がるパルス
+                withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
+                    pulseScale = 2.5
+                }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.15)) {
+                    pulseScale = 1.0
+                }
             }
         }
     }
@@ -189,9 +202,10 @@ struct RightWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
     @State private var appeared = false
+    @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
-        ZStack(alignment: .trailing) {  // グローを外側（右端）に
+        ZStack(alignment: .trailing) {
             WingShape(side: .right).fill(.black)
 
             if engine.isSessionActive {
@@ -204,11 +218,22 @@ struct RightWing: View {
             }
         }
         .frame(height: height)
+        .scaleEffect(x: pulseScale, anchor: .leading)  // notch側を基点に横に伸びる
         .offset(x: appeared ? 0 : -14)
         .opacity(appeared ? 1 : 0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.15)) {
                 appeared = true
+            }
+        }
+        .onChange(of: engine.focusState?.phase) { _, newPhase in
+            if newPhase == .drift {
+                withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
+                    pulseScale = 2.5
+                }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.15)) {
+                    pulseScale = 1.0
+                }
             }
         }
     }
@@ -232,18 +257,17 @@ struct NotchDropdown: View {
             Color.clear
                 .frame(height: notchHeight)
 
-            // 下部: ドロップダウンパネル
-            if isHovering && engine.isSessionActive {
+            // 下部: ドロップダウンパネル（notchの裏からスライドで出現）
+            if engine.isSessionActive {
                 dropdownContent
-                    .transition(.asymmetric(
-                        insertion: .push(from: .top).combined(with: .opacity),
-                        removal: .push(from: .bottom).combined(with: .opacity)
-                    ))
+                    .offset(y: isHovering ? 0 : -100)  // 非ホバー時はnotchの裏に隠れる
+                    .opacity(isHovering ? 1 : 0)
             }
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .clipped()  // notchより上にはみ出さない
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -253,35 +277,37 @@ struct NotchDropdown: View {
     }
 
     private var dropdownContent: some View {
-        VStack(spacing: 8) {
-            // Honest Clock (大きく)
-            HStack(alignment: .firstTextBaseline) {
+        VStack(spacing: 6) {
+            // Honest Clock + 状態バッジ (1行に収める)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(formatCompactTime(engine.focusedElapsed))
-                    .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
                     .foregroundStyle(phaseColor)
+                    .fixedSize()
                 Text("/")
-                    .font(.system(size: 12))
+                    .font(.system(size: 9))
                     .foregroundStyle(.white.opacity(0.2))
                 Text(formatCompactTime(engine.totalElapsed))
-                    .font(.system(size: 14, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.4))
-                Spacer()
-                // 状態バッジ
+                    .fixedSize()
+                Spacer(minLength: 2)
                 Text(engine.focusState?.phase.label ?? "")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(phaseColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
                     .background(phaseColor.opacity(0.15))
                     .clipShape(Capsule())
+                    .fixedSize()
             }
 
             // タイムラインバー
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: 1.5)
                         .fill(.white.opacity(0.08))
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: 1.5)
                         .fill(phaseColor.opacity(0.6))
                         .frame(width: max(2, geo.size.width * engine.focusRatio))
                 }
@@ -289,33 +315,31 @@ struct NotchDropdown: View {
             .frame(height: 3)
 
             // カウンタ + 現在のアプリ
-            HStack {
+            HStack(spacing: 6) {
                 counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
-
-                Spacer()
-
-                // 現在のアプリ名
+                Spacer(minLength: 0)
                 if !engine.currentApp.isEmpty {
                     Text(engine.currentApp)
-                        .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.25))
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
         .frame(width: notchWidth)
         .background(
             UnevenRoundedRectangle(
-                topLeadingRadius: 0,     // notchに直結
-                bottomLeadingRadius: 14,
-                bottomTrailingRadius: 14,
-                topTrailingRadius: 0      // notchに直結
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 12,
+                bottomTrailingRadius: 12,
+                topTrailingRadius: 0
             )
-            .fill(.black.opacity(0.92))
+            .fill(.black)
         )
     }
 
