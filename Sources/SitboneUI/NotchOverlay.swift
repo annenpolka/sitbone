@@ -309,18 +309,11 @@ struct RightWing: View {
                     ZStack(alignment: .leading) {
                         WingShape(side: .right).fill(.black)
 
-                        HStack(spacing: 3) {
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color.sitboneDrift)
-                                .frame(width: 2.5, height: height * 0.4)
-                                .shadow(color: Color.sitboneDrift, radius: 8)
-
-                            Text(formatCompactTime(driftDuration))
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color.sitboneDrift.opacity(0.8))
-                                .fixedSize()
-                        }
-                        .padding(.leading, 2)
+                        Text(formatCompactTime(driftDuration))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.sitboneDrift.opacity(0.85))
+                            .fixedSize()
+                            .padding(.leading, 4)
                     }
                 }
                 .frame(height: height)
