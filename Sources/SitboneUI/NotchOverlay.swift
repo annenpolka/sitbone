@@ -300,56 +300,37 @@ struct RightWing: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // notchの裏に隠れる部分（黒埋め）
-            Color.black
-                .frame(width: overlapInto)
+        Group {
+            if isDrift {
+                HStack(spacing: 0) {
+                    Color.black
+                        .frame(width: overlapInto)
 
-            // 見える部分
-            ZStack(alignment: .leading) {
-                WingShape(side: .right).fill(.black)
+                    ZStack(alignment: .leading) {
+                        WingShape(side: .right).fill(.black)
 
-                if engine.isSessionActive {
-                    HStack(spacing: 3) {
-                        // グローライン
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(phaseColor)
-                            .frame(width: 2.5, height: height * 0.4)
-                            .shadow(color: phaseColor, radius: 8)
+                        HStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(Color.sitboneDrift)
+                                .frame(width: 2.5, height: height * 0.4)
+                                .shadow(color: Color.sitboneDrift, radius: 8)
 
-                        // DRIFT時: 経過時間を表示
-                        if isDrift {
                             Text(formatCompactTime(driftDuration))
                                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.sitboneDrift.opacity(0.8))
                                 .fixedSize()
-                                .transition(.opacity.combined(with: .scale(scale: 0.8)))
                         }
+                        .padding(.leading, 2)
                     }
-                    .padding(.leading, 2)
-                    .animation(.easeInOut(duration: 0.5), value: isDrift)
                 }
+                .frame(height: height)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .leading).combined(with: .opacity),
+                    removal: .opacity
+                ))
             }
         }
-        .frame(height: height)
-        .scaleEffect(x: pulseScale, anchor: .leading)
-        .offset(x: appeared ? 0 : -14)
-        .opacity(appeared ? 1 : 0)
-        .onAppear {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.15)) {
-                appeared = true
-            }
-        }
-        .onChange(of: engine.focusState?.phase) { _, newPhase in
-            if newPhase == .drift {
-                withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
-                    pulseScale = 2.5
-                }
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.15)) {
-                    pulseScale = 1.0
-                }
-            }
-        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isDrift)
     }
 
     private var phaseColor: Color {
