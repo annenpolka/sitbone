@@ -149,8 +149,8 @@ public final class NotchOverlayController {
         let safe = screen.safeAreaInsets
         let topY = frame.maxY - safe.top  // メニューバー/notchの下端
 
-        let ghostWidth: CGFloat = 220
-        let ghostHeight: CGFloat = 50
+        let ghostWidth: CGFloat = 280
+        let ghostHeight: CGFloat = 64
         let ghostX = frame.midX - ghostWidth / 2
         let ghostY = topY - ghostHeight - 6
 
@@ -172,8 +172,8 @@ public final class NotchOverlayController {
         let safe = screen.safeAreaInsets
         let topY = frame.maxY - safe.top
 
-        let ghostWidth: CGFloat = 220
-        let ghostHeight: CGFloat = 50
+        let ghostWidth: CGFloat = 280
+        let ghostHeight: CGFloat = 64
         let ghostX = frame.midX - ghostWidth / 2
         let ghostY = topY - ghostHeight - 6
 
@@ -616,9 +616,9 @@ struct GhostTeacherBanner: View {
             Spacer(minLength: 0)
 
             if let site = engine.pendingGhostTeacher {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Text(site)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
 
@@ -628,10 +628,10 @@ struct GhostTeacherBanner: View {
                         withAnimation { engine.classifySite(site, as: .flow) }
                     } label: {
                         Text("FLOW")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.sitboneFlow)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
                             .background(Color.sitboneFlow.opacity(0.15))
                             .clipShape(Capsule())
                     }
@@ -641,10 +641,10 @@ struct GhostTeacherBanner: View {
                         withAnimation { engine.classifySite(site, as: .drift) }
                     } label: {
                         Text("DRIFT")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.sitboneDrift)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
                             .background(Color.sitboneDrift.opacity(0.15))
                             .clipShape(Capsule())
                     }
@@ -654,17 +654,17 @@ struct GhostTeacherBanner: View {
                         withAnimation { engine.dismissGhostTeacher() }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white.opacity(0.3))
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 14)
                         .fill(.black.opacity(0.92))
-                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
                 )
                 .offset(y: visible ? 0 : -30)
                 .opacity(visible ? 1 : 0)
