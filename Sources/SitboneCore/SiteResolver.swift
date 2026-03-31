@@ -18,15 +18,29 @@ public enum TitleSegmenter {
     private static let separators = [" - ", " | ", " — ", " – ", " · ", " • "]
 
     public static func split(_ title: String) -> [String] {
-        // 最初にマッチするセパレータで分割
-        for sep in separators {
-            if title.contains(sep) {
-                return title.components(separatedBy: sep)
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-            }
+        // 全セパレータを正規表現で同時に分割
+        let pattern = separators
+            .map { NSRegularExpression.escapedPattern(for: $0) }
+            .joined(separator: "|")
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return [title.trimmingCharacters(in: .whitespaces)]
         }
-        return [title.trimmingCharacters(in: .whitespaces)]
+        let range = NSRange(title.startIndex..., in: title)
+        var lastEnd = title.startIndex
+        var result: [String] = []
+
+        regex.enumerateMatches(in: title, range: range) { match, _, _ in
+            guard let matchRange = match?.range, let swiftRange = Range(matchRange, in: title) else { return }
+            let segment = String(title[lastEnd..<swiftRange.lowerBound])
+                .trimmingCharacters(in: .whitespaces)
+            if !segment.isEmpty { result.append(segment) }
+            lastEnd = swiftRange.upperBound
+        }
+        // 最後のセグメント
+        let last = String(title[lastEnd...]).trimmingCharacters(in: .whitespaces)
+        if !last.isEmpty { result.append(last) }
+
+        return result.isEmpty ? [title.trimmingCharacters(in: .whitespaces)] : result
     }
 }
 

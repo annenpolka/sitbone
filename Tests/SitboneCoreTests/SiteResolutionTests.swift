@@ -25,6 +25,16 @@ final class SiteResolutionTests: XCTestCase {
         XCTAssertEqual(segments, ["Issues", "owner/repo", "GitHub"])
     }
 
+    func testSplitMixedSeparators() {
+        let segments = TitleSegmenter.split("Claude Island — A beautiful home - Google Chrome")
+        XCTAssertEqual(segments, ["Claude Island", "A beautiful home", "Google Chrome"])
+    }
+
+    func testSplitSingleSegment() {
+        let segments = TitleSegmenter.split("New Tab")
+        XCTAssertEqual(segments, ["New Tab"])
+    }
+
     // MARK: - 既知サイトのセグメントマッチ
 
     func testFindKnownSiteInSegments() {
