@@ -404,8 +404,8 @@ struct NotchDropdown: View {
                 Spacer()
             }
 
-            // アプリ一覧（コンパクト版）
-            ForEach(apps.sorted(by: { $0.flowScore > $1.flowScore })) { app in
+            // アプリ一覧（ソートしない: 編集中に動くと困る）
+            ForEach(apps) { app in
                 CompactRiverRow(app: app)
             }
 
@@ -493,41 +493,38 @@ struct CompactRiverRow: View {
                 .frame(width: 52, alignment: .trailing)
                 .lineLimit(1)
 
-            // ミニスライダー
+            // ミニスライダー（タップ + ドラッグで編集）
             GeometryReader { geo in
                 let w = geo.size.width
                 let center = w / 2
                 let pos = center + CGFloat(app.flowScore) * center
 
                 ZStack {
-                    // 背景
                     RoundedRectangle(cornerRadius: 2)
                         .fill(.white.opacity(0.05))
-                    // 中央線
                     Rectangle()
                         .fill(.white.opacity(0.08))
                         .frame(width: 0.5)
-                    // バー
                     let barStart = min(center, pos)
                     let barW = abs(pos - center)
                     RoundedRectangle(cornerRadius: 1)
                         .fill(dotColor.opacity(0.3))
                         .frame(width: max(1, barW), height: 6)
                         .position(x: barStart + barW / 2, y: geo.size.height / 2)
-                    // ドット
                     Circle()
                         .fill(dotColor)
                         .frame(width: 8, height: 8)
                         .shadow(color: dotColor.opacity(0.4), radius: 2)
                         .position(x: pos, y: geo.size.height / 2)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    let s = (value.location.x - center) / center
-                                    app.flowScore = max(-1, min(1, Double(s)))
-                                }
-                        )
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let s = (value.location.x - center) / center
+                            app.flowScore = max(-1, min(1, Double(s)))
+                        }
+                )
             }
             .frame(height: 14)
         }
