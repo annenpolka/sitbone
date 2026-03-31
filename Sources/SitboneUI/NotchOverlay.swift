@@ -93,9 +93,11 @@ public final class NotchOverlayController {
             interactive: false
         )
 
+        // 右翼: DRIFT時にdrift時間を表示するため幅を大きめに確保
+        let rightWingWidth: CGFloat = 80
         rightPanel = makePanel(
-            frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: totalWidth, height: h),
-            content: RightWing(engine: engine, height: h),
+            frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: rightWingWidth, height: h),
+            content: RightWing(engine: engine, height: h, overlapInto: overlapInto),
             interactive: false
         )
 
@@ -167,7 +169,8 @@ public final class NotchOverlayController {
     }
 
     private func repositionGhostPanel() {
-        guard let screen = NSScreen.main, let panel = ghostPanel else { return }
+        guard let panel = ghostPanel else { return }
+        let screen = screenOfFocusedWindow() ?? NSScreen.main ?? NSScreen.screens[0]
         let frame = screen.frame
         let safe = screen.safeAreaInsets
         let topY = frame.maxY - safe.top
@@ -179,6 +182,36 @@ public final class NotchOverlayController {
 
         panel.setFrame(NSRect(x: ghostX, y: ghostY, width: ghostWidth, height: ghostHeight), display: true)
         panel.orderFrontRegardless()
+    }
+
+    /// フォーカスウィンドウが表示されているスクリーンを取得
+    private func screenOfFocusedWindow() -> NSScreen? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var value: AnyObject?
+        let err = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &value)
+        guard err == .success, let window = value else { return nil }
+
+        var posValue: AnyObject?
+        AXUIElementCopyAttributeValue(window as! AXUIElement, kAXPositionAttribute as CFString, &posValue)
+        guard let posValue else { return nil }
+
+        var point = CGPoint.zero
+        AXValueGetValue(posValue as! AXValue, .cgPoint, &point)
+
+        // CGのy座標系（上が0）→ NSScreenのy座標系（下が0）に変換
+        // NSScreen.screens[0]がプライマリ（一番高いmaxYを持つ）
+        if let primaryHeight = NSScreen.screens.first?.frame.height {
+            point.y = primaryHeight - point.y
+        }
+
+        // ウィンドウ位置を含むスクリーンを探す
+        for screen in NSScreen.screens {
+            if screen.frame.contains(point) {
+                return screen
+            }
+        }
+        return nil
     }
 
     private func makePanel<V: View>(frame: NSRect, content: V, interactive: Bool) -> NSPanel {
@@ -253,21 +286,49 @@ struct LeftWing: View {
 struct RightWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
+    let overlapInto: CGFloat
     @State private var appeared = false
     @State private var pulseScale: CGFloat = 1.0
 
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            WingShape(side: .right).fill(.black)
+    private var isDrift: Bool {
+        engine.focusState?.phase == .drift
+    }
 
-            if engine.isSessionActive {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(phaseColor)
-                    .frame(width: 2.5, height: height * 0.4)
-                    .shadow(color: phaseColor, radius: 8)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
-                    .padding(.trailing, 3)
-                    .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
+    private var driftDuration: TimeInterval {
+        guard let state = engine.focusState, state.phase == .drift else { return 0 }
+        return Date().timeIntervalSince(state.since)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // notchの裏に隠れる部分（黒埋め）
+            Color.black
+                .frame(width: overlapInto)
+
+            // 見える部分
+            ZStack(alignment: .leading) {
+                WingShape(side: .right).fill(.black)
+
+                if engine.isSessionActive {
+                    HStack(spacing: 3) {
+                        // グローライン
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(phaseColor)
+                            .frame(width: 2.5, height: height * 0.4)
+                            .shadow(color: phaseColor, radius: 8)
+
+                        // DRIFT時: 経過時間を表示
+                        if isDrift {
+                            Text(formatCompactTime(driftDuration))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.sitboneDrift.opacity(0.8))
+                                .fixedSize()
+                                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                        }
+                    }
+                    .padding(.leading, 2)
+                    .animation(.easeInOut(duration: 0.5), value: isDrift)
+                }
             }
         }
         .frame(height: height)
