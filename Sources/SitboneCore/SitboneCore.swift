@@ -232,19 +232,20 @@ public final class SessionEngine: ObservableObject {
         // ブラウザのサイト名抽出 + Ghost Teacher
         if WindowTitleParser.isBrowser(currentApp) {
             let site = WindowTitleParser.extractSiteName(from: currentWindowTitle, app: currentApp)
-            // ブラウザのサイト名も記録
-            if let site {
-                siteObserver.record(site: site, phase: newPhase, duration: 1)
-            }
+            // Ghost Teacher判定はrecordの前に（recordするとisNewSiteがfalseになる）
             if currentSite != site {
                 currentSite = site
                 if let site, siteObserver.isNewSite(site) {
                     pendingGhostTeacher = site
                 }
             }
+            // 記録はGhost Teacher判定の後
+            if let site {
+                siteObserver.record(site: site, phase: newPhase, duration: 1)
+            }
         } else {
             currentSite = nil
-            pendingGhostTeacher = nil
+            // pendingGhostTeacherはクリアしない（ユーザーの判定を待つ）
         }
 
         // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)
