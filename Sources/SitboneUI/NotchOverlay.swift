@@ -257,16 +257,11 @@ struct NotchDropdown: View {
             Color.clear
                 .frame(height: notchHeight)
 
-            // 下部: クリップコンテナ（ドロップダウンの上端を隠す）
+            // 下部: ドロップダウン（背景が上に伸びているので角は常に隠れる）
             if engine.isSessionActive {
-                VStack(spacing: 0) {
-                    dropdownContent
-                        .offset(y: isHovering ? 0 : -120)
-                        .opacity(isHovering ? 1 : 0)
-                    Spacer(minLength: 0)
-                }
-                .frame(height: 150)
-                .clipped()  // この枠内だけ描画 → 上にスライド中のコンテンツは見えない
+                dropdownContent
+                    .offset(y: isHovering ? 0 : -120)
+                    .opacity(isHovering ? 1 : 0)
             }
 
             Spacer(minLength: 0)
@@ -318,25 +313,40 @@ struct NotchDropdown: View {
             }
             .frame(height: 3)
 
-            // カウンタ + 現在のアプリ
+            // カウンタ
             HStack(spacing: 6) {
                 counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
                 Spacer(minLength: 0)
-                if !engine.currentApp.isEmpty {
+            }
+
+            // 現在のアプリ + ウィンドウタイトル
+            if !engine.currentApp.isEmpty {
+                HStack(spacing: 3) {
                     Text(engine.currentApp)
-                        .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.25))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                    if !engine.currentWindowTitle.isEmpty
+                        && engine.currentWindowTitle != engine.currentApp {
+                        Text("·")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.white.opacity(0.15))
+                        Text(engine.currentWindowTitle)
+                            .font(.system(size: 8))
+                            .foregroundStyle(.white.opacity(0.2))
+                    }
+                    Spacer(minLength: 0)
                 }
+                .lineLimit(1)
+                .truncationMode(.tail)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .frame(width: notchWidth)
         .background(
+            // 上端をnotchの裏まで大きく伸ばす（アニメーション中の角を隠す）
             UnevenRoundedRectangle(
                 topLeadingRadius: 0,
                 bottomLeadingRadius: 12,
@@ -344,6 +354,7 @@ struct NotchDropdown: View {
                 topTrailingRadius: 0
             )
             .fill(.black)
+            .padding(.top, -50)  // 黒背景を上に50pt拡張（notchの裏に隠れる）
         )
     }
 
