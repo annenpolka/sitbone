@@ -224,13 +224,22 @@ public final class SessionEngine: ObservableObject {
         currentApp = deps.windowMonitor.frontmostAppName() ?? ""
         currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
+        // アプリ使用をSiteObserverに記録（1tick = 1秒）
+        if !currentApp.isEmpty {
+            siteObserver.record(site: currentApp, phase: newPhase, duration: 1)
+        }
+
         // ブラウザのサイト名抽出 + Ghost Teacher
         if WindowTitleParser.isBrowser(currentApp) {
             let site = WindowTitleParser.extractSiteName(from: currentWindowTitle, app: currentApp)
+            // ブラウザのサイト名も記録
+            if let site {
+                siteObserver.record(site: site, phase: newPhase, duration: 1)
+            }
             if currentSite != site {
                 currentSite = site
                 if let site, siteObserver.isNewSite(site) {
-                    pendingGhostTeacher = site  // 未分類サイト → UIに通知
+                    pendingGhostTeacher = site
                 }
             }
         } else {

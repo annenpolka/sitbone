@@ -278,6 +278,10 @@ struct NotchDropdown: View {
         .onHover { hovering in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 isHovering = hovering
+                // ホバー外したらリバーを閉じて統計に戻る
+                if !hovering {
+                    showRiver = false
+                }
             }
         }
     }
@@ -382,15 +386,6 @@ struct NotchDropdown: View {
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
                 Spacer(minLength: 0)
-                // リバーに切り替え
-                Button {
-                    showRiver = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.3))
-                }
-                .buttonStyle(.plain)
             }
 
             if !engine.currentApp.isEmpty {
@@ -415,15 +410,18 @@ struct NotchDropdown: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showRiver = true
+            }
+        }
     }
 
     // MARK: Inline River
 
-    @State private var apps: [AppClassification] = FocusRiverView.sampleApps()
-
     private var riverContent: some View {
         VStack(spacing: 4) {
-            // ヘッダー + 戻るボタン
             HStack {
                 Button {
                     showRiver = false
@@ -439,13 +437,29 @@ struct NotchDropdown: View {
                 Spacer()
             }
 
-            // アプリ一覧（ソートしない: 編集中に動くと困る）
-            ForEach(apps) { app in
-                CompactRiverRow(app: app)
+            // SiteObserverから動的に生成
+            let sites = engine.siteObserver.allSuggestions()
+            if sites.isEmpty {
+                Text("No apps observed yet")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(sites.prefix(8), id: \.site) { item in
+                    LiveRiverRow(
+                        site: item.site,
+                        suggestion: item.suggestion,
+                        totalTime: item.entry.totalTime,
+                        onClassify: { classification in
+                            engine.siteObserver.classify(site: item.site, as: classification)
+                        }
+                    )
+                }
             }
 
             // 凡例
             HStack {
+                Circle().fill(Color.sitboneFlow).frame(width: 4, height: 4)
                 Text("FLOW")
                     .font(.system(size: 7, weight: .bold))
                     .foregroundStyle(Color.sitboneFlow.opacity(0.5))
@@ -453,6 +467,7 @@ struct NotchDropdown: View {
                 Text("DRIFT")
                     .font(.system(size: 7, weight: .bold))
                     .foregroundStyle(Color.sitboneDrift.opacity(0.5))
+                Circle().fill(Color.sitboneDrift).frame(width: 4, height: 4)
             }
         }
         .padding(.horizontal, 8)
@@ -515,17 +530,26 @@ struct WingShape: Shape {
     }
 }
 
-// MARK: - Compact River Row (2値トグル: FLOW/DRIFT)
+// MARK: - Live River Row (SiteObserverベース、2値トグル)
 
-struct CompactRiverRow: View {
-    @ObservedObject var app: AppClassification
+struct LiveRiverRow: View {
+    let site: String
+    let suggestion: SiteSuggestion
+    let totalTime: TimeInterval
+    let onClassify: (SiteSuggestion) -> Void
 
-    private var isFlow: Bool { app.flowScore > 0 }
+    private var isFlow: Bool { suggestion == .flow }
+    private var isDrift: Bool { suggestion == .drift }
 
     var body: some View {
-        HStack(spacing: 6) {
-            // アプリ名
-            Text(app.id)
+        HStack(spacing: 4) {
+            // 使用時間バー（視覚的な重み）
+            RoundedRectangle(cornerRadius: 1)
+                .fill(barColor.opacity(0.4))
+                .frame(width: max(2, min(20, CGFloat(totalTime / 60))), height: 8)
+
+            // サイト/アプリ名
+            Text(site)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
@@ -534,27 +558,32 @@ struct CompactRiverRow: View {
 
             // FLOW/DRIFTトグル
             HStack(spacing: 0) {
-                toggleButton("FLOW", isSelected: isFlow, color: Color.sitboneFlow) {
-                    app.flowScore = 0.9
+                toggleBtn("F", isSelected: isFlow, color: Color.sitboneFlow) {
+                    onClassify(.flow)
                 }
-                toggleButton("DRIFT", isSelected: !isFlow, color: Color.sitboneDrift) {
-                    app.flowScore = -0.9
+                toggleBtn("D", isSelected: isDrift, color: Color.sitboneDrift) {
+                    onClassify(.drift)
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.05)))
+            .background(RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.04)))
         }
         .padding(.vertical, 1)
     }
 
-    private func toggleButton(_ label: String, isSelected: Bool, color: Color, action: @escaping () -> Void) -> some View {
+    private var barColor: Color {
+        if isFlow { return Color.sitboneFlow }
+        if isDrift { return Color.sitboneDrift }
+        return .white
+    }
+
+    private func toggleBtn(_ label: String, isSelected: Bool, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(isSelected ? color : .white.opacity(0.2))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(isSelected ? color : .white.opacity(0.15))
+                .frame(width: 18, height: 14)
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 3)
                         .fill(isSelected ? color.opacity(0.15) : .clear)
                 )
         }
