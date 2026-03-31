@@ -252,26 +252,17 @@ public final class SessionEngine: ObservableObject {
         focusState = newState
         counters = newCounters
 
-        // Ghost Teacher: 全アプリ + ブラウザサイトで未分類チェック
+        // Ghost Teacher + SiteResolver (ADR-0009, ADR-0010)
         let prevApp = currentApp
         currentApp = deps.windowMonitor.frontmostAppName() ?? ""
         currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
-        // アプリ切り替え検出 → Ghost Teacher (ADR-0009: デフォルト分類なし)
-        if currentApp != prevApp && !currentApp.isEmpty {
-            if siteObserver.isNewSite(currentApp) {
-                pendingGhostTeacher = currentApp
-            }
-        }
-
-        // アプリ使用をSiteObserverに記録
-        if !currentApp.isEmpty {
-            siteObserver.record(site: currentApp, phase: newPhase, duration: 1)
-        }
-
-        // ブラウザのサイト名抽出
         if WindowTitleParser.isBrowser(currentApp) {
-            let site = WindowTitleParser.extractSiteName(from: currentWindowTitle, app: currentApp)
+            // ブラウザ: SiteResolverでサイト名を安定抽出
+            let resolution = SiteResolver.resolve(
+                title: currentWindowTitle, app: currentApp, observer: siteObserver
+            )
+            let site = resolution.site
             if currentSite != site {
                 currentSite = site
                 if let site, siteObserver.isNewSite(site) {
@@ -281,8 +272,18 @@ public final class SessionEngine: ObservableObject {
             if let site {
                 siteObserver.record(site: site, phase: newPhase, duration: 1)
             }
+            // ブラウザアプリ自体のGhost Teacherは抑制
         } else {
             currentSite = nil
+            // 非ブラウザアプリ: アプリ単位でGhost Teacher
+            if currentApp != prevApp && !currentApp.isEmpty {
+                if siteObserver.isNewSite(currentApp) {
+                    pendingGhostTeacher = currentApp
+                }
+            }
+            if !currentApp.isEmpty {
+                siteObserver.record(site: currentApp, phase: newPhase, duration: 1)
+            }
         }
 
         // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)
