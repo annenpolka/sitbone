@@ -368,6 +368,16 @@ public final class SessionEngine: ObservableObject {
         }
     }
 
+    /// プロファイル名を変更
+    public func renameProfile(_ profile: SessionProfile, to newName: String) {
+        guard let idx = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        profiles[idx].name = newName
+        if activeProfile.id == profile.id {
+            activeProfile.name = newName
+        }
+        if persistenceEnabled { saveProfiles() }
+    }
+
     /// プロファイルを削除（アクティブ・最後の1つは削除不可）
     public func deleteProfile(_ profile: SessionProfile) {
         guard profiles.count > 1 else { return }
