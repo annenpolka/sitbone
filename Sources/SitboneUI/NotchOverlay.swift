@@ -70,6 +70,7 @@ public final class NotchOverlayController {
     private var expandPanel: NSPanel?
     private let engine: SessionEngine
     private var geo: NotchGeometry?
+    public var onSettingsTap: (() -> Void)?
 
     public init(engine: SessionEngine) {
         self.engine = engine
@@ -110,7 +111,10 @@ public final class NotchOverlayController {
             content: NotchDropdown(
                 engine: engine,
                 notchWidth: notchWidth,
-                notchHeight: h
+                notchHeight: h,
+                onSettingsTap: { [weak self] in
+                    self?.onSettingsTap?()
+                }
             ),
             interactive: true
         )
@@ -169,10 +173,11 @@ struct LeftWing: View {
                     .shadow(color: phaseColor, radius: 8)
                     .shadow(color: phaseColor.opacity(0.5), radius: 3)
                     .padding(.leading, 3)
+                    .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
         }
         .frame(height: height)
-        .scaleEffect(x: pulseScale, anchor: .trailing)  // notch側を基点に横に伸びる
+        .scaleEffect(x: pulseScale, anchor: .trailing)
         .offset(x: appeared ? 0 : 14)
         .opacity(appeared ? 1 : 0)
         .onAppear {
@@ -182,7 +187,6 @@ struct LeftWing: View {
         }
         .onChange(of: engine.focusState?.phase) { _, newPhase in
             if newPhase == .drift {
-                // DRIFT突入: 翼が一瞬広がるパルス
                 withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
                     pulseScale = 2.5
                 }
@@ -215,10 +219,11 @@ struct RightWing: View {
                     .shadow(color: phaseColor, radius: 8)
                     .shadow(color: phaseColor.opacity(0.5), radius: 3)
                     .padding(.trailing, 3)
+                    .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
         }
         .frame(height: height)
-        .scaleEffect(x: pulseScale, anchor: .leading)  // notch側を基点に横に伸びる
+        .scaleEffect(x: pulseScale, anchor: .leading)
         .offset(x: appeared ? 0 : -14)
         .opacity(appeared ? 1 : 0)
         .onAppear {
@@ -249,6 +254,7 @@ struct NotchDropdown: View {
     @ObservedObject var engine: SessionEngine
     let notchWidth: CGFloat
     let notchHeight: CGFloat
+    var onSettingsTap: (() -> Void)?
     @State private var isHovering = false
 
     var body: some View {
@@ -321,9 +327,9 @@ struct NotchDropdown: View {
                 Spacer(minLength: 0)
             }
 
-            // 現在のアプリ + ウィンドウタイトル
-            if !engine.currentApp.isEmpty {
-                HStack(spacing: 3) {
+            // 現在のアプリ + ウィンドウタイトル + 設定ボタン
+            HStack(spacing: 3) {
+                if !engine.currentApp.isEmpty {
                     Text(engine.currentApp)
                         .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.white.opacity(0.35))
@@ -336,11 +342,20 @@ struct NotchDropdown: View {
                             .font(.system(size: 8))
                             .foregroundStyle(.white.opacity(0.2))
                     }
-                    Spacer(minLength: 0)
                 }
-                .lineLimit(1)
-                .truncationMode(.tail)
+                Spacer(minLength: 0)
+                // 設定ボタン（川アイコン）
+                Button {
+                    onSettingsTap?()
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .buttonStyle(.plain)
             }
+            .lineLimit(1)
+            .truncationMode(.tail)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)

@@ -24,6 +24,7 @@ struct SitboneApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor let engine = SessionEngine(deps: .live)
     @MainActor var notchController: NotchOverlayController?
+    @MainActor var settingsController: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 二重起動チェック
@@ -42,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Notchオーバーレイ + セッション起動
         Task { @MainActor in
             let controller = NotchOverlayController(engine: engine)
+            controller.onSettingsTap = { [weak self] in
+                self?.settingsController?.show()
+            }
             self.notchController = controller
             controller.show()
 
@@ -56,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine.onDriftEntered = {
                 NSSound(named: "Tink")?.play()
             }
+
+            // Settings window
+            self.settingsController = SettingsWindowController(engine: engine)
 
             if autoStart {
                 engine.startSession()
