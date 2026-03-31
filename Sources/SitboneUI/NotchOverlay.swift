@@ -70,7 +70,6 @@ public final class NotchOverlayController {
     private var expandPanel: NSPanel?
     private let engine: SessionEngine
     private var geo: NotchGeometry?
-    private let hoverState = HoverState()
 
     public init(engine: SessionEngine) {
         self.engine = engine
@@ -81,41 +80,46 @@ public final class NotchOverlayController {
         let geo = NotchGeometry.detect()
         self.geo = geo
 
-        // 翼: notchに2ptオーバーラップして隙間をなくす
-        let wingWidth: CGFloat = 22
-        let overlap: CGFloat = 2
+        // 翼: notchの裏に大きくオーバーラップ（接合部をnotchが隠す）
+        let visibleWidth: CGFloat = 14  // notchから出て見える部分
+        let overlapInto: CGFloat = 16   // notchの裏に隠れる部分
+        let totalWidth = visibleWidth + overlapInto
         let h = geo.notchHeight
         leftPanel = makePanel(
-            frame: NSRect(x: geo.notchLeft - wingWidth + overlap, y: geo.notchBottomY, width: wingWidth, height: h),
+            frame: NSRect(x: geo.notchLeft - visibleWidth, y: geo.notchBottomY, width: totalWidth, height: h),
             content: LeftWing(engine: engine, height: h),
             interactive: false
         )
 
         rightPanel = makePanel(
-            frame: NSRect(x: geo.notchRight - overlap, y: geo.notchBottomY, width: wingWidth, height: h),
+            frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: totalWidth, height: h),
             content: RightWing(engine: engine, height: h),
             interactive: false
         )
 
-        // ホバー検出パネル: notch領域全体 (透明、マウスイベントのみ)
-        let hoverWidth = geo.notchRight - geo.notchLeft + wingWidth * 2
-        let hoverX = geo.notchLeft - wingWidth
-        let hoverPanel = makePanel(
-            frame: NSRect(x: hoverX, y: geo.notchBottomY - 120, width: hoverWidth, height: h + 120),
-            content: HoverDetector(
+        // ホバーパネル: notchと同幅、下に展開 (Claude Island風)
+        let notchWidth = geo.notchRight - geo.notchLeft
+        let expandHeight: CGFloat = 180
+        let expandPanel = makePanel(
+            frame: NSRect(
+                x: geo.notchLeft,
+                y: geo.notchBottomY - expandHeight,
+                width: notchWidth,
+                height: expandHeight + h  // notch高さ分もカバー（ホバー検出用）
+            ),
+            content: NotchDropdown(
                 engine: engine,
-                hoverState: hoverState,
-                notchWidth: geo.notchRight - geo.notchLeft,
-                wingWidth: wingWidth
+                notchWidth: notchWidth,
+                notchHeight: h
             ),
             interactive: true
         )
-        hoverPanel.ignoresMouseEvents = false
-        self.expandPanel = hoverPanel
+        expandPanel.ignoresMouseEvents = false
+        self.expandPanel = expandPanel
 
         leftPanel?.orderFrontRegardless()
         rightPanel?.orderFrontRegardless()
-        hoverPanel.orderFrontRegardless()
+        expandPanel.orderFrontRegardless()
     }
 
     public func hide() {
@@ -146,13 +150,6 @@ public final class NotchOverlayController {
     }
 }
 
-// MARK: - Hover State (共有)
-
-@MainActor
-final class HoverState: ObservableObject {
-    @Published var isHovering = false
-}
-
 // MARK: - Left Wing (notchからスライドして出現)
 
 struct LeftWing: View {
@@ -161,21 +158,20 @@ struct LeftWing: View {
     @State private var appeared = false
 
     var body: some View {
-        ZStack(alignment: .trailing) {
+        ZStack(alignment: .leading) {  // グローを外側（左端）に
             WingShape(side: .left).fill(.black)
 
             if engine.isSessionActive {
-                // notch側端にグローライン
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(phaseColor.opacity(0.7))
-                    .frame(width: 2, height: height * 0.45)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 6)
-                    .padding(.trailing, 1)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(phaseColor)
+                    .frame(width: 2.5, height: height * 0.4)
+                    .shadow(color: phaseColor, radius: 8)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
+                    .padding(.leading, 3)
             }
         }
         .frame(height: height)
-        // notchの中から左にスライドして出現
-        .offset(x: appeared ? 0 : 20)
+        .offset(x: appeared ? 0 : 14)
         .opacity(appeared ? 1 : 0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.1)) {
@@ -189,28 +185,26 @@ struct LeftWing: View {
     }
 }
 
-// MARK: - Right Wing (notchからスライドして出現)
-
 struct RightWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
     @State private var appeared = false
 
     var body: some View {
-        ZStack(alignment: .leading) {
+        ZStack(alignment: .trailing) {  // グローを外側（右端）に
             WingShape(side: .right).fill(.black)
 
             if engine.isSessionActive {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(phaseColor.opacity(0.7))
-                    .frame(width: 2, height: height * 0.45)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 6)
-                    .padding(.leading, 1)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(phaseColor)
+                    .frame(width: 2.5, height: height * 0.4)
+                    .shadow(color: phaseColor, radius: 8)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
+                    .padding(.trailing, 3)
             }
         }
         .frame(height: height)
-        // notchの中から右にスライドして出現
-        .offset(x: appeared ? 0 : -20)
+        .offset(x: appeared ? 0 : -14)
         .opacity(appeared ? 1 : 0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.15)) {
@@ -224,96 +218,104 @@ struct RightWing: View {
     }
 }
 
-// MARK: - Hover Detector + Expand Panel
+// MARK: - Notch Dropdown (Claude Island風: notchから下に展開)
 
-struct HoverDetector: View {
+struct NotchDropdown: View {
     @ObservedObject var engine: SessionEngine
-    @ObservedObject var hoverState: HoverState
     let notchWidth: CGFloat
-    let wingWidth: CGFloat
+    let notchHeight: CGFloat
     @State private var isHovering = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // 上部: 透明なホバー検出エリア（notch + 翼の幅）
+            // 上部: notch領域（透明、ホバー検出用）
             Color.clear
-                .frame(height: 32)
+                .frame(height: notchHeight)
 
-            // 下部: 展開パネル（ホバー時のみ表示）
+            // 下部: ドロップダウンパネル
             if isHovering && engine.isSessionActive {
-                expandedContent
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                dropdownContent
+                    .transition(.asymmetric(
+                        insertion: .push(from: .top).combined(with: .opacity),
+                        removal: .push(from: .bottom).combined(with: .opacity)
+                    ))
             }
 
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 isHovering = hovering
-                hoverState.isHovering = hovering
             }
         }
     }
 
-    private var expandedContent: some View {
-        VStack(spacing: 6) {
-            // 状態 + Honest Clock
-            HStack {
-                Circle()
-                    .fill(phaseColor)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
-                Text(engine.focusState?.phase.label ?? "")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(phaseColor)
-                Spacer()
+    private var dropdownContent: some View {
+        VStack(spacing: 8) {
+            // Honest Clock (大きく)
+            HStack(alignment: .firstTextBaseline) {
                 Text(formatCompactTime(engine.focusedElapsed))
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 22, weight: .semibold, design: .monospaced))
                     .foregroundStyle(phaseColor)
                 Text("/")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.2))
                 Text(formatCompactTime(engine.totalElapsed))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.4))
+                Spacer()
+                // 状態バッジ
+                Text(engine.focusState?.phase.label ?? "")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(phaseColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(phaseColor.opacity(0.15))
+                    .clipShape(Capsule())
             }
 
-            // タイムライン + Ratio
-            HStack(spacing: 8) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(.white.opacity(0.1))
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(phaseColor.opacity(0.7))
-                            .frame(width: max(2, geo.size.width * engine.focusRatio))
-                    }
+            // タイムラインバー
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(phaseColor.opacity(0.6))
+                        .frame(width: max(2, geo.size.width * engine.focusRatio))
                 }
-                .frame(height: 4)
-
-                Text("\(Int(engine.focusRatio * 100))%")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .fixedSize()
             }
+            .frame(height: 3)
 
-            // カウンタ
-            HStack(spacing: 12) {
+            // カウンタ + 現在のアプリ
+            HStack {
                 counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
+
                 Spacer()
+
+                // 現在のアプリ名
+                if !engine.currentApp.isEmpty {
+                    Text(engine.currentApp)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.3))
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(width: notchWidth + wingWidth * 2 - 16)
+        .padding(.vertical, 12)
+        .frame(width: notchWidth)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.black.opacity(0.9))
-                .shadow(color: phaseColor.opacity(0.15), radius: 8, y: 4)
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,     // notchに直結
+                bottomLeadingRadius: 14,
+                bottomTrailingRadius: 14,
+                topTrailingRadius: 0      // notchに直結
+            )
+            .fill(.black.opacity(0.92))
         )
     }
 
@@ -339,89 +341,34 @@ enum WingSide { case left, right }
 
 struct WingShape: Shape {
     let side: WingSide
-    // 外側: notchの物理的な角丸に合わせる
-    let outerR: CGFloat = 8
-    // 内側(notch側): 凹面カーブでnotchの角に滑らかに接続
-    let innerR: CGFloat = 7
 
     func path(in rect: CGRect) -> Path {
+        // notchの裏に隠れる部分は直角でOK。見える外側だけ角丸。
+        // notchの物理角丸 ≈ 7pt
+        let r: CGFloat = 7
         var p = Path()
         switch side {
         case .left:
-            // 左上: 外側の角丸（凸）
-            p.move(to: CGPoint(x: outerR, y: 0))
-            // 上辺 → notch側の手前で止まる
+            // 左上を角丸、他は直角（右側はnotchの裏に隠れる）
+            p.move(to: CGPoint(x: r, y: 0))
             p.addLine(to: CGPoint(x: rect.maxX, y: 0))
-            // 右上: notchの角に凹面カーブで接続
-            // notchの角は下に向かって丸いので、翼の右上は凹面で受ける
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - innerR))
-            p.addArc(
-                center: CGPoint(x: rect.maxX + innerR, y: rect.maxY - innerR),
-                radius: innerR,
-                startAngle: .degrees(180),
-                endAngle: .degrees(90),
-                clockwise: true  // 凹面（時計回り = 内側にくぼむ）
-            )
-            // 下辺
-            p.addLine(to: CGPoint(x: outerR, y: rect.maxY))
-            // 左下: 外側の角丸（凸）
-            p.addArc(
-                center: CGPoint(x: outerR, y: rect.maxY - outerR),
-                radius: outerR, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
-            )
-            // 左辺
-            p.addLine(to: CGPoint(x: 0, y: outerR))
-            // 左上: 外側の角丸（凸）
-            p.addArc(
-                center: CGPoint(x: outerR, y: outerR),
-                radius: outerR, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
-            )
-
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: r, y: rect.maxY))
+            p.addArc(center: CGPoint(x: r, y: rect.maxY - r),
+                      radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+            p.addLine(to: CGPoint(x: 0, y: r))
+            p.addArc(center: CGPoint(x: r, y: r),
+                      radius: r, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
         case .right:
-            // 左上: notchの角に凹面カーブで接続
-            p.move(to: CGPoint(x: 0, y: rect.maxY))
-            p.addLine(to: CGPoint(x: 0, y: rect.maxY - innerR))
-            // 凹面でnotchの左下角に接続
-            // notch右下の角は上に丸いので、翼の左上は凹面で受ける
-            // Wait - the notch curves happen at the bottom of the notch
-            // From the wing's perspective (flipped y in SwiftUI): top of wing connects to notch bottom
-            p.addArc(
-                center: CGPoint(x: -innerR, y: rect.maxY - innerR),
-                radius: innerR,
-                startAngle: .degrees(0),
-                endAngle: .degrees(270),
-                clockwise: true
-            )
-            // 上辺
-            // Actually let me redo this more carefully
-            p = Path()
-            // notch側の凹面接続から開始
+            // 右上を角丸、他は直角（左側はnotchの裏に隠れる）
             p.move(to: CGPoint(x: 0, y: 0))
-            // 上辺 → 右上
-            p.addLine(to: CGPoint(x: rect.maxX - outerR, y: 0))
-            // 右上: 外側の角丸
-            p.addArc(
-                center: CGPoint(x: rect.maxX - outerR, y: outerR),
-                radius: outerR, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false
-            )
-            // 右辺
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - outerR))
-            // 右下: 外側の角丸
-            p.addArc(
-                center: CGPoint(x: rect.maxX - outerR, y: rect.maxY - outerR),
-                radius: outerR, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
-            )
-            // 下辺 → notch側
+            p.addLine(to: CGPoint(x: rect.maxX - r, y: 0))
+            p.addArc(center: CGPoint(x: rect.maxX - r, y: r),
+                      radius: r, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r),
+                      radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
             p.addLine(to: CGPoint(x: 0, y: rect.maxY))
-            // 左下: notchの角に凹面カーブで接続
-            p.addArc(
-                center: CGPoint(x: -innerR, y: rect.maxY - innerR),
-                radius: innerR,
-                startAngle: .degrees(90),
-                endAngle: .degrees(0),
-                clockwise: true
-            )
-            p.addLine(to: CGPoint(x: 0, y: 0))
         }
         p.closeSubpath()
         return p
