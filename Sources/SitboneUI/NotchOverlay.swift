@@ -331,6 +331,41 @@ struct NotchDropdown: View {
                     .fixedSize()
             }
 
+            // Ghost Teacher: 未分類サイトのインライン質問
+            if let site = engine.pendingGhostTeacher {
+                HStack(spacing: 4) {
+                    Text(site)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                    Text("→")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.3))
+                    Button("FLOW") {
+                        engine.classifySite(site, as: .flow)
+                    }
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.sitboneFlow)
+                    .buttonStyle(.plain)
+                    Button("DRIFT") {
+                        engine.classifySite(site, as: .drift)
+                    }
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.sitboneDrift)
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                    Button("×") {
+                        engine.dismissGhostTeacher()
+                    }
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+                .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.06)))
+            }
+
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 1.5)

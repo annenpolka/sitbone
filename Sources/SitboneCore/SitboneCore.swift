@@ -155,6 +155,10 @@ public final class SessionEngine: ObservableObject {
     @Published public private(set) var totalElapsed: TimeInterval = 0
     @Published public private(set) var currentApp: String = ""
     @Published public private(set) var currentWindowTitle: String = ""
+    @Published public private(set) var currentSite: String?  // ブラウザのサイト名
+    @Published public private(set) var pendingGhostTeacher: String?  // 未分類サイト（Ghost Teacher待ち）
+
+    public let siteObserver = SiteObserver()
 
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
@@ -220,10 +224,37 @@ public final class SessionEngine: ObservableObject {
         currentApp = deps.windowMonitor.frontmostAppName() ?? ""
         currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
+        // ブラウザのサイト名抽出 + Ghost Teacher
+        if WindowTitleParser.isBrowser(currentApp) {
+            let site = WindowTitleParser.extractSiteName(from: currentWindowTitle, app: currentApp)
+            if currentSite != site {
+                currentSite = site
+                if let site, siteObserver.isNewSite(site) {
+                    pendingGhostTeacher = site  // 未分類サイト → UIに通知
+                }
+            }
+        } else {
+            currentSite = nil
+            pendingGhostTeacher = nil
+        }
+
         // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)
         if oldPhase == .flow && newPhase == .drift {
             onDriftEntered?()
         }
+    }
+
+    /// Ghost Teacherの回答: サイトをFLOW/DRIFTに分類
+    public func classifySite(_ site: String, as classification: SiteSuggestion) {
+        siteObserver.classify(site: site, as: classification)
+        if pendingGhostTeacher == site {
+            pendingGhostTeacher = nil
+        }
+    }
+
+    /// Ghost Teacherを無視
+    public func dismissGhostTeacher() {
+        pendingGhostTeacher = nil
     }
 
     public var focusRatio: Double {

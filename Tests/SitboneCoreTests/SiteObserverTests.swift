@@ -64,4 +64,39 @@ final class SiteObserverTests: XCTestCase {
         let suggestion = observer.suggest(for: "reddit")
         XCTAssertEqual(suggestion, .undecided)
     }
+
+    // MARK: - Ghost Teacher: 未分類サイト検出
+
+    func testUnknownSiteIsNew() {
+        let observer = SiteObserver()
+        XCTAssertTrue(observer.isNewSite("YouTube"))
+    }
+
+    func testKnownSiteIsNotNew() {
+        let observer = SiteObserver()
+        observer.record(site: "YouTube", phase: .drift, duration: 10)
+        XCTAssertFalse(observer.isNewSite("YouTube"))
+    }
+
+    func testClassifySite() {
+        let observer = SiteObserver()
+        observer.classify(site: "YouTube", as: .drift)
+        XCTAssertEqual(observer.classification(for: "YouTube"), .drift)
+        XCTAssertFalse(observer.isNewSite("YouTube"))
+    }
+
+    func testClassifiedSiteOverridesSuggestion() {
+        let observer = SiteObserver()
+        observer.record(site: "YouTube", phase: .flow, duration: 300)
+        // 自動サジェストはflowだが、ユーザーがdriftに分類
+        observer.classify(site: "YouTube", as: .drift)
+        XCTAssertEqual(observer.effectiveClassification(for: "YouTube"), .drift)
+    }
+
+    func testEffectiveClassificationFallsBackToSuggestion() {
+        let observer = SiteObserver()
+        observer.record(site: "docs.rs", phase: .flow, duration: 300)
+        // ユーザー分類なし → サジェストを使う
+        XCTAssertEqual(observer.effectiveClassification(for: "docs.rs"), .flow)
+    }
 }
