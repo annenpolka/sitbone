@@ -93,8 +93,8 @@ public final class NotchOverlayController {
             interactive: false
         )
 
-        // 右翼: DRIFT時のみ表示。時間が切れないよう十分な幅
-        let rightWingWidth: CGFloat = 100
+        // 右翼: DRIFT時のみ表示。notchに密着するようoverlapを大きく
+        let rightWingWidth: CGFloat = 80
         rightPanel = makePanel(
             frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: rightWingWidth, height: h),
             content: RightWing(engine: engine, height: h, overlapInto: overlapInto),
@@ -313,7 +313,7 @@ struct RightWing: View {
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.sitboneDrift.opacity(0.9))
                             .fixedSize()
-                            .padding(.leading, 1)
+                            .padding(.leading, 0)
                     }
                 }
                 .frame(height: height)
