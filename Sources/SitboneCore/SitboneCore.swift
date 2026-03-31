@@ -95,9 +95,11 @@ public final class FocusStateMachine: Sendable {
     }
 
     /// 現在のセンサー値に基づき次の状態を計算する
+    /// siteIsDrift: 現在のアプリ/サイトがDRIFT分類されているか
     public func tick(
         current: FocusState,
-        counters: Counters
+        counters: Counters,
+        siteIsDrift: Bool = false
     ) async -> (state: FocusState, counters: Counters) {
         let now = deps.clock.now
         let idle = deps.idleDetector.secondsSinceLastEvent()
@@ -106,6 +108,10 @@ public final class FocusStateMachine: Sendable {
 
         switch current {
         case .flow:
+            // DRIFTサイトにいる → idle関係なく即DRIFT
+            if siteIsDrift {
+                return (.drift(since: now), counters)
+            }
             if idle < thresholds.t1 {
                 return (current, counters)
             }
@@ -122,6 +128,15 @@ public final class FocusStateMachine: Sendable {
             return (.away(since: now), counters)
 
         case .drift:
+            // DRIFTサイトにいる間はDRIFTを維持（復帰させない）
+            if siteIsDrift {
+                let driftDuration = now.timeIntervalSince(current.since)
+                if driftDuration > thresholds.t2, presence.status != .present {
+                    counters.deserted.increment()
+                    return (.away(since: now), counters)
+                }
+                return (current, counters)
+            }
             if idle < thresholds.flowRecovery {
                 counters.driftRecovered.increment()
                 return (.flow(since: now), counters)
@@ -213,8 +228,20 @@ public final class SessionEngine: ObservableObject {
         lastTickTime = now
 
         let oldPhase = state.phase
+
+        // 現在のサイト/アプリがDRIFT分類かチェック
+        let isDriftSite: Bool = {
+            if let site = currentSite {
+                return siteObserver.effectiveClassification(for: site) == .drift
+            }
+            if !currentApp.isEmpty {
+                return siteObserver.effectiveClassification(for: currentApp) == .drift
+            }
+            return false
+        }()
+
         let (newState, newCounters) = await machine.tick(
-            current: state, counters: counters
+            current: state, counters: counters, siteIsDrift: isDriftSite
         )
         let newPhase = newState.phase
         focusState = newState
