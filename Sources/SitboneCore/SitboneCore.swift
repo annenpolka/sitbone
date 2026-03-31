@@ -292,6 +292,7 @@ public final class SessionEngine: ObservableObject {
         if pendingGhostTeacher == site {
             pendingGhostTeacher = nil
         }
+        saveClassifications()  // 分類するたびに永続化
     }
 
     /// Ghost Teacherを無視
@@ -302,5 +303,24 @@ public final class SessionEngine: ObservableObject {
     public var focusRatio: Double {
         guard totalElapsed > 0 else { return 0 }
         return focusedElapsed / totalElapsed
+    }
+
+    // MARK: - 分類データ永続化
+
+    private static let classificationsURL: URL = {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".sitbone", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("classifications.json")
+    }()
+
+    public func loadClassifications() {
+        guard let data = try? Data(contentsOf: Self.classificationsURL) else { return }
+        try? siteObserver.loadJSON(data)
+    }
+
+    public func saveClassifications() {
+        guard let data = try? siteObserver.toJSON() else { return }
+        try? data.write(to: Self.classificationsURL)
     }
 }

@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Task { @MainActor in
+            // 分類データをロード
+            engine.loadClassifications()
+
             let controller = NotchOverlayController(engine: engine)
             self.notchController = controller
             controller.show()
