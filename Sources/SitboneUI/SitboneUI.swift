@@ -1,0 +1,253 @@
+// SitboneUI — メニューバーUI
+
+public import SwiftUI
+public import SitboneCore
+public import SitboneData
+
+// MARK: - 色定義
+
+extension Color {
+    static let sitboneFlow = Color(red: 0.176, green: 0.831, blue: 0.659)   // #2DD4A8
+    static let sitboneDrift = Color(red: 0.957, green: 0.659, blue: 0.239)  // #F4A83D
+    static let sitboneAway = Color(red: 0.420, green: 0.447, blue: 0.498)   // #6B7280
+    static let sitboneText = Color(red: 0.898, green: 0.906, blue: 0.922)   // #E5E7EB
+    static let sitboneAccent = Color(red: 0.506, green: 0.549, blue: 0.973) // #818CF8
+}
+
+// MARK: - フォーカス状態の色
+
+extension FocusPhase {
+    public var color: Color {
+        switch self {
+        case .flow: .sitboneFlow
+        case .drift: .sitboneDrift
+        case .away: .sitboneAway
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .flow: "FLOW"
+        case .drift: "DRIFT"
+        case .away: "AWAY"
+        }
+    }
+}
+
+// MARK: - MenuBarView
+
+public struct MenuBarView: View {
+    @ObservedObject var engine: SessionEngine
+
+    public init(engine: SessionEngine) {
+        self.engine = engine
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            Divider()
+
+            if engine.isSessionActive {
+                activeSessionView
+            } else {
+                inactiveView
+            }
+
+            Divider()
+            sessionToggle
+            Divider()
+
+            Button("Quit Sitbone") {
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q")
+        }
+        .padding(8)
+        .frame(width: 260)
+    }
+
+    private var header: some View {
+        HStack {
+            Text("Sitbone")
+                .font(.headline)
+            Spacer()
+            if let phase = engine.focusState?.phase {
+                Text(phase.label)
+                    .font(.caption.bold())
+                    .foregroundStyle(phase.color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(phase.color.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+        }
+    }
+
+    private var activeSessionView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Honest Clock
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Focused")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formatTime(engine.focusedElapsed))
+                        .font(.system(.title2, design: .monospaced))
+                        .foregroundStyle(Color.sitboneFlow)
+                }
+                Spacer()
+                VStack(alignment: .trailing) {
+                    Text("Elapsed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formatTime(engine.totalElapsed))
+                        .font(.system(.title2, design: .monospaced))
+                        .foregroundStyle(.primary)
+                }
+            }
+
+            // Focus Ratio バー
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.2))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.sitboneFlow)
+                        .frame(width: geo.size.width * engine.focusRatio)
+                }
+            }
+            .frame(height: 6)
+
+            HStack {
+                Text("Ratio: \(Int(engine.focusRatio * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            // カウンタ: ↩ drift_recovered, ← away_recovered, ✕ deserted
+            HStack(spacing: 16) {
+                counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
+                counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
+                counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
+            }
+        }
+    }
+
+    private var inactiveView: some View {
+        VStack(spacing: 4) {
+            Text("No active session")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var sessionToggle: some View {
+        Button {
+            if engine.isSessionActive {
+                engine.endSession()
+            } else {
+                engine.startSession()
+            }
+        } label: {
+            HStack {
+                Image(systemName: engine.isSessionActive ? "stop.fill" : "play.fill")
+                Text(engine.isSessionActive ? "End Session" : "Start Session")
+            }
+        }
+        .keyboardShortcut("s", modifiers: [.command, .shift])
+    }
+
+    private func counterItem(_ symbol: String, _ count: Int, _ color: Color) -> some View {
+        HStack(spacing: 2) {
+            Text(symbol)
+                .foregroundStyle(color)
+            Text("\(count)")
+                .font(.system(.body, design: .monospaced))
+        }
+    }
+}
+
+// MARK: - Time formatting
+
+func formatTime(_ interval: TimeInterval) -> String {
+    let h = Int(interval) / 3600
+    let m = (Int(interval) % 3600) / 60
+    let s = Int(interval) % 60
+    if h > 0 {
+        return String(format: "%d:%02d:%02d", h, m, s)
+    }
+    return String(format: "%d:%02d", m, s)
+}
+
+// MARK: - MenuBar Icon
+
+/// macOS標準のテンプレートアイコン（くり抜き▽ + 状態ドット）
+public func menuBarIcon(phase: FocusPhase?) -> NSImage {
+    let size = NSSize(width: 18, height: 18)
+
+    // テンプレートアイコン（黒で描画、OSがダーク/ライトモードに合わせて着色）
+    let template = NSImage(size: size, flipped: true) { rect in
+        let inset: CGFloat = 1.5
+        let top = inset
+        let bottom = rect.maxY - inset
+        let left = rect.minX + inset
+        let right = rect.maxX - inset
+        let midX = rect.midX
+        let cornerRadius: CGFloat = 2.5
+
+        // 角丸の逆三角形パスを作成
+        let path = NSBezierPath()
+
+        // 左上角（角丸）
+        path.move(to: NSPoint(x: left + cornerRadius, y: top))
+        // 上辺
+        path.line(to: NSPoint(x: right - cornerRadius, y: top))
+        // 右上角（角丸）
+        path.curve(
+            to: NSPoint(x: right, y: top + cornerRadius),
+            controlPoint1: NSPoint(x: right, y: top),
+            controlPoint2: NSPoint(x: right, y: top)
+        )
+        // 右辺→下頂点
+        path.line(to: NSPoint(x: midX + cornerRadius * 0.5, y: bottom - cornerRadius))
+        // 下頂点（角丸）
+        path.curve(
+            to: NSPoint(x: midX - cornerRadius * 0.5, y: bottom - cornerRadius),
+            controlPoint1: NSPoint(x: midX, y: bottom),
+            controlPoint2: NSPoint(x: midX, y: bottom)
+        )
+        // 左辺
+        path.line(to: NSPoint(x: left, y: top + cornerRadius))
+        // 左上角（角丸）
+        path.curve(
+            to: NSPoint(x: left + cornerRadius, y: top),
+            controlPoint1: NSPoint(x: left, y: top),
+            controlPoint2: NSPoint(x: left, y: top)
+        )
+        path.close()
+
+        // アウトライン（くり抜き）: ストロークのみ
+        NSColor.black.setStroke()
+        path.lineWidth = 1.5
+        path.stroke()
+
+        // セッション中なら中央に小さなドット
+        if phase == .flow || phase == .drift {
+            let dotSize: CGFloat = 3.5
+            let dotRect = NSRect(
+                x: midX - dotSize / 2,
+                y: (top + bottom) / 2 - dotSize / 2 - 1,
+                width: dotSize,
+                height: dotSize
+            )
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+        }
+
+        return true
+    }
+    template.isTemplate = true
+    return template
+}
