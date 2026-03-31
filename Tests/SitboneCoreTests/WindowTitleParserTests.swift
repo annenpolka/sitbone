@@ -76,6 +76,16 @@ final class WindowTitleParserTests: XCTestCase {
         XCTAssertNil(WindowTitleParser.defaultClassification(for: "some-unknown-site"))
     }
 
+    func testShortPatternDoesNotFalsePositive() {
+        // "X" (Twitter/X) should NOT match "Xcode"
+        XCTAssertNil(WindowTitleParser.defaultClassification(for: "Xcode"))
+        // "LINE" should NOT match "Outline"
+        XCTAssertNil(WindowTitleParser.defaultClassification(for: "Outline"))
+        // But exact matches should work
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "X"), .drift)
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "LINE"), .drift)
+    }
+
     // MARK: - ブラウザ判定
 
     func testIsBrowser() {

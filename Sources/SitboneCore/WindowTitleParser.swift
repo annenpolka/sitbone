@@ -60,14 +60,24 @@ public enum WindowTitleParser {
     ]
 
     /// サイト名からデフォルトのFLOW/DRIFT分類を返す（不明ならnil）
+    /// 完全一致 or 単語境界マッチ（"X"が"Xcode"にヒットしないように）
     public static func defaultClassification(for siteName: String) -> SiteSuggestion? {
-        let lower = siteName.lowercased()
+        let name = siteName.lowercased()
         for pattern in flowPatterns {
-            if lower.contains(pattern.lowercased()) { return .flow }
+            if matchesSiteName(name, pattern: pattern.lowercased()) { return .flow }
         }
         for pattern in driftPatterns {
-            if lower.contains(pattern.lowercased()) { return .drift }
+            if matchesSiteName(name, pattern: pattern.lowercased()) { return .drift }
         }
         return nil
+    }
+
+    /// 短いパターン（3文字以下）は完全一致、それ以外はcontainsマッチ
+    private static func matchesSiteName(_ name: String, pattern: String) -> Bool {
+        if pattern.count <= 4 {
+            // "X", "LINE" 等の短いパターンは完全一致のみ
+            return name == pattern
+        }
+        return name.contains(pattern)
     }
 }
