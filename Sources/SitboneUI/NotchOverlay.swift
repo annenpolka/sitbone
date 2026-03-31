@@ -100,7 +100,7 @@ public final class NotchOverlayController {
 
         // ホバーパネル: notchと同幅、下に展開 (Claude Island風)
         let notchWidth = geo.notchRight - geo.notchLeft
-        let expandHeight: CGFloat = 180
+        let expandHeight: CGFloat = 240  // リバー表示時に十分な高さ
         let expandPanel = makePanel(
             frame: NSRect(
                 x: geo.notchLeft,
@@ -254,8 +254,9 @@ struct NotchDropdown: View {
     @ObservedObject var engine: SessionEngine
     let notchWidth: CGFloat
     let notchHeight: CGFloat
-    var onSettingsTap: (() -> Void)?
+    var onSettingsTap: (() -> Void)?  // unused now, kept for API compat
     @State private var isHovering = false
+    @State private var showRiver = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -282,8 +283,31 @@ struct NotchDropdown: View {
     }
 
     private var dropdownContent: some View {
+        VStack(spacing: 0) {
+            if showRiver {
+                riverContent
+            } else {
+                statsContent
+            }
+        }
+        .frame(width: notchWidth)
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 12,
+                bottomTrailingRadius: 12,
+                topTrailingRadius: 0
+            )
+            .fill(.black)
+            .padding(.top, -50)
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showRiver)
+    }
+
+    // MARK: Stats view
+
+    private var statsContent: some View {
         VStack(spacing: 6) {
-            // Honest Clock + 状態バッジ (1行に収める)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(formatCompactTime(engine.focusedElapsed))
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
@@ -307,7 +331,6 @@ struct NotchDropdown: View {
                     .fixedSize()
             }
 
-            // タイムラインバー
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 1.5)
@@ -319,17 +342,24 @@ struct NotchDropdown: View {
             }
             .frame(height: 3)
 
-            // カウンタ
             HStack(spacing: 6) {
                 counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
                 Spacer(minLength: 0)
+                // リバーに切り替え
+                Button {
+                    showRiver = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .buttonStyle(.plain)
             }
 
-            // 現在のアプリ + ウィンドウタイトル + 設定ボタン
-            HStack(spacing: 3) {
-                if !engine.currentApp.isEmpty {
+            if !engine.currentApp.isEmpty {
+                HStack(spacing: 3) {
                     Text(engine.currentApp)
                         .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.white.opacity(0.35))
@@ -342,35 +372,56 @@ struct NotchDropdown: View {
                             .font(.system(size: 8))
                             .foregroundStyle(.white.opacity(0.2))
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-                // 設定ボタン（川アイコン）
-                Button {
-                    onSettingsTap?()
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.3))
-                }
-                .buttonStyle(.plain)
+                .lineLimit(1)
+                .truncationMode(.tail)
             }
-            .lineLimit(1)
-            .truncationMode(.tail)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
-        .frame(width: notchWidth)
-        .background(
-            // 上端をnotchの裏まで大きく伸ばす（アニメーション中の角を隠す）
-            UnevenRoundedRectangle(
-                topLeadingRadius: 0,
-                bottomLeadingRadius: 12,
-                bottomTrailingRadius: 12,
-                topTrailingRadius: 0
-            )
-            .fill(.black)
-            .padding(.top, -50)  // 黒背景を上に50pt拡張（notchの裏に隠れる）
-        )
+    }
+
+    // MARK: Inline River
+
+    @State private var apps: [AppClassification] = FocusRiverView.sampleApps()
+
+    private var riverContent: some View {
+        VStack(spacing: 4) {
+            // ヘッダー + 戻るボタン
+            HStack {
+                Button {
+                    showRiver = false
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                Text("Focus River")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+            }
+
+            // アプリ一覧（コンパクト版）
+            ForEach(apps.sorted(by: { $0.flowScore > $1.flowScore })) { app in
+                CompactRiverRow(app: app)
+            }
+
+            // 凡例
+            HStack {
+                Text("FLOW")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.sitboneFlow.opacity(0.5))
+                Spacer()
+                Text("DRIFT")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.sitboneDrift.opacity(0.5))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
     }
 
     private func counterItem(_ symbol: String, _ count: Int, _ color: Color) -> some View {
@@ -426,6 +477,66 @@ struct WingShape: Shape {
         }
         p.closeSubpath()
         return p
+    }
+}
+
+// MARK: - Compact River Row (notch幅に収まるミニスライダー)
+
+struct CompactRiverRow: View {
+    @ObservedObject var app: AppClassification
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(app.id)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 52, alignment: .trailing)
+                .lineLimit(1)
+
+            // ミニスライダー
+            GeometryReader { geo in
+                let w = geo.size.width
+                let center = w / 2
+                let pos = center + CGFloat(app.flowScore) * center
+
+                ZStack {
+                    // 背景
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.white.opacity(0.05))
+                    // 中央線
+                    Rectangle()
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 0.5)
+                    // バー
+                    let barStart = min(center, pos)
+                    let barW = abs(pos - center)
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(dotColor.opacity(0.3))
+                        .frame(width: max(1, barW), height: 6)
+                        .position(x: barStart + barW / 2, y: geo.size.height / 2)
+                    // ドット
+                    Circle()
+                        .fill(dotColor)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: dotColor.opacity(0.4), radius: 2)
+                        .position(x: pos, y: geo.size.height / 2)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let s = (value.location.x - center) / center
+                                    app.flowScore = max(-1, min(1, Double(s)))
+                                }
+                        )
+                }
+            }
+            .frame(height: 14)
+        }
+    }
+
+    private var dotColor: Color {
+        if app.flowScore > 0.2 { return Color.sitboneFlow }
+        if app.flowScore < -0.2 { return Color.sitboneDrift }
+        return .white.opacity(0.4)
     }
 }
 
