@@ -170,8 +170,9 @@ public final class SessionEngine: ObservableObject {
     @Published public private(set) var totalElapsed: TimeInterval = 0
     @Published public private(set) var currentApp: String = ""
     @Published public private(set) var currentWindowTitle: String = ""
-    @Published public private(set) var currentSite: String?  // ブラウザのサイト名
-    @Published public private(set) var pendingGhostTeacher: String?  // 未分類サイト（Ghost Teacher待ち）
+    @Published public private(set) var currentSite: String?
+    @Published public private(set) var pendingGhostTeacher: String?
+    @Published public var cumulativeFocusedHours: Double = 0  // 累積集中時間（時間）
 
     public let siteObserver = SiteObserver()
 
@@ -210,6 +211,10 @@ public final class SessionEngine: ObservableObject {
         tickTask?.cancel()
         tickTask = nil
         isSessionActive = false
+
+        // セッション累積データを保存
+        saveCumulativeData()
+
         focusState = nil
         lastTickTime = nil
     }
@@ -305,13 +310,21 @@ public final class SessionEngine: ObservableObject {
         return focusedElapsed / totalElapsed
     }
 
-    // MARK: - 分類データ永続化
+    // MARK: - 永続化
 
-    private static let classificationsURL: URL = {
+    private static let sitboneDir: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".sitbone", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("classifications.json")
+        return dir
+    }()
+
+    private static let classificationsURL: URL = {
+        sitboneDir.appendingPathComponent("classifications.json")
+    }()
+
+    private static let cumulativeURL: URL = {
+        sitboneDir.appendingPathComponent("cumulative.json")
     }()
 
     public func loadClassifications() {
@@ -322,5 +335,26 @@ public final class SessionEngine: ObservableObject {
     public func saveClassifications() {
         guard let data = try? siteObserver.toJSON() else { return }
         try? data.write(to: Self.classificationsURL)
+    }
+
+    /// 累積データをロード
+    public func loadCumulativeData() {
+        guard let data = try? Data(contentsOf: Self.cumulativeURL),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
+              let hours = dict["totalFocusedHours"] else { return }
+        cumulativeFocusedHours = hours
+    }
+
+    /// 累積データを保存
+    public func saveCumulativeData() {
+        cumulativeFocusedHours += focusedElapsed / 3600.0
+        let dict: [String: Any] = [
+            "totalFocusedHours": cumulativeFocusedHours,
+            "lifetimeDriftRecovered": counters.driftRecovered.value,
+            "lifetimeAwayRecovered": counters.awayRecovered.value,
+            "lifetimeDeserted": counters.deserted.value,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
+        try? data.write(to: Self.cumulativeURL)
     }
 }

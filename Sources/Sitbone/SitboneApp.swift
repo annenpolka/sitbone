@@ -40,8 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Task { @MainActor in
-            // 分類データをロード
+            // 永続データをロード
             engine.loadClassifications()
+            engine.loadCumulativeData()
 
             let controller = NotchOverlayController(engine: engine)
             self.notchController = controller
