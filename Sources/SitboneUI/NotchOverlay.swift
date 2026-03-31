@@ -153,27 +153,35 @@ final class HoverState: ObservableObject {
     @Published var isHovering = false
 }
 
-// MARK: - Left Wing (notchに溶け込むグローライン)
+// MARK: - Left Wing (notchからスライドして出現)
 
 struct LeftWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
+    @State private var appeared = false
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            // 黒い翼（notchと一体化）
             WingShape(side: .left).fill(.black)
 
-            // セッション中: notch側端に状態色のグローライン
             if engine.isSessionActive {
+                // notch側端にグローライン
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(phaseColor.opacity(0.6))
-                    .frame(width: 2, height: height * 0.5)
-                    .shadow(color: phaseColor.opacity(0.4), radius: 4)
+                    .fill(phaseColor.opacity(0.7))
+                    .frame(width: 2, height: height * 0.45)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 6)
                     .padding(.trailing, 1)
             }
         }
         .frame(height: height)
+        // notchの中から左にスライドして出現
+        .offset(x: appeared ? 0 : 36)
+        .opacity(appeared ? 1 : 0)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.1)) {
+                appeared = true
+            }
+        }
     }
 
     private var phaseColor: Color {
@@ -181,11 +189,12 @@ struct LeftWing: View {
     }
 }
 
-// MARK: - Right Wing (notchに溶け込むグローライン)
+// MARK: - Right Wing (notchからスライドして出現)
 
 struct RightWing: View {
     @ObservedObject var engine: SessionEngine
     let height: CGFloat
+    @State private var appeared = false
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -193,13 +202,21 @@ struct RightWing: View {
 
             if engine.isSessionActive {
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(phaseColor.opacity(0.6))
-                    .frame(width: 2, height: height * 0.5)
-                    .shadow(color: phaseColor.opacity(0.4), radius: 4)
+                    .fill(phaseColor.opacity(0.7))
+                    .frame(width: 2, height: height * 0.45)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 6)
                     .padding(.leading, 1)
             }
         }
         .frame(height: height)
+        // notchの中から右にスライドして出現
+        .offset(x: appeared ? 0 : -36)
+        .opacity(appeared ? 1 : 0)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.15)) {
+                appeared = true
+            }
+        }
     }
 
     private var phaseColor: Color {
@@ -322,30 +339,38 @@ enum WingSide { case left, right }
 
 struct WingShape: Shape {
     let side: WingSide
-    let radius: CGFloat = 6
+    // 外側の角丸をnotchの角丸に合わせる（macOS notchは約10pt角丸）
+    let radius: CGFloat = 10
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
         switch side {
         case .left:
+            // 上辺: 左上が角丸、右上はnotchに直結（直角）
             p.move(to: CGPoint(x: radius, y: 0))
-            p.addLine(to: CGPoint(x: rect.maxX, y: 0))
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: 0))         // → notch接合（直角）
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY)) // ↓ notch接合（直角）
             p.addLine(to: CGPoint(x: radius, y: rect.maxY))
+            // 左下の角丸
             p.addArc(center: CGPoint(x: radius, y: rect.maxY - radius),
                       radius: radius, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
             p.addLine(to: CGPoint(x: 0, y: radius))
+            // 左上の角丸
             p.addArc(center: CGPoint(x: radius, y: radius),
                       radius: radius, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+
         case .right:
-            p.move(to: CGPoint(x: 0, y: 0))
+            // 上辺: 左上はnotchに直結（直角）、右上が角丸
+            p.move(to: CGPoint(x: 0, y: 0))                    // notch接合（直角）
             p.addLine(to: CGPoint(x: rect.maxX - radius, y: 0))
+            // 右上の角丸
             p.addArc(center: CGPoint(x: rect.maxX - radius, y: radius),
                       radius: radius, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
             p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+            // 右下の角丸
             p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
                       radius: radius, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-            p.addLine(to: CGPoint(x: 0, y: rect.maxY))
+            p.addLine(to: CGPoint(x: 0, y: rect.maxY))         // notch接合（直角）
         }
         p.closeSubpath()
         return p
