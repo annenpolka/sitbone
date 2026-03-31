@@ -4,17 +4,7 @@ public import SwiftUI
 public import SitboneCore
 public import SitboneData
 
-// MARK: - 色定義
-
-extension Color {
-    static let sitboneFlow = Color(red: 0.176, green: 0.831, blue: 0.659)   // #2DD4A8
-    static let sitboneDrift = Color(red: 0.957, green: 0.659, blue: 0.239)  // #F4A83D
-    static let sitboneAway = Color(red: 0.420, green: 0.447, blue: 0.498)   // #6B7280
-    static let sitboneText = Color(red: 0.898, green: 0.906, blue: 0.922)   // #E5E7EB
-    static let sitboneAccent = Color(red: 0.506, green: 0.549, blue: 0.973) // #818CF8
-}
-
-// MARK: - フォーカス状態の色
+// MARK: - フォーカス状態の色（Color定義はNotchOverlay.swiftに集約）
 
 extension FocusPhase {
     public var color: Color {

@@ -1,191 +1,372 @@
-// NotchOverlay — Notch下に常時表示するタイムラインバー (Layer 1)
+// NotchOverlay — ノッチ左右にコンパクトな翼 + ホバーで詳細展開
+// ADR-0006
 
 import SwiftUI
 import AppKit
+import CoreGraphics
+import Combine
 public import SitboneCore
-public import SitboneData
+import SitboneData
+
+// MARK: - Notch Geometry
+
+struct NotchGeometry: Sendable {
+    let screenFrame: CGRect
+    let notchLeft: CGFloat
+    let notchRight: CGFloat
+    let notchBottomY: CGFloat
+    let notchHeight: CGFloat
+    let hasNotch: Bool
+
+    @MainActor
+    static func detect() -> NotchGeometry {
+        let screen = builtInScreen() ?? NSScreen.main ?? NSScreen.screens[0]
+        let frame = screen.frame
+        let safe = screen.safeAreaInsets
+        let hasNotch = safe.top > 0
+
+        if hasNotch,
+           let leftEar = screen.auxiliaryTopLeftArea,
+           let rightEar = screen.auxiliaryTopRightArea {
+            return NotchGeometry(
+                screenFrame: frame,
+                notchLeft: leftEar.maxX,
+                notchRight: rightEar.minX,
+                notchBottomY: frame.maxY - safe.top,
+                notchHeight: safe.top,
+                hasNotch: true
+            )
+        } else {
+            let menuH: CGFloat = 25
+            return NotchGeometry(
+                screenFrame: frame,
+                notchLeft: frame.midX - 90,
+                notchRight: frame.midX + 90,
+                notchBottomY: frame.maxY - menuH,
+                notchHeight: menuH,
+                hasNotch: false
+            )
+        }
+    }
+
+    @MainActor
+    private static func builtInScreen() -> NSScreen? {
+        for screen in NSScreen.screens {
+            if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+               CGDisplayIsBuiltin(id) != 0 {
+                return screen
+            }
+        }
+        return nil
+    }
+}
 
 // MARK: - NotchOverlayController
 
 @MainActor
 public final class NotchOverlayController {
-    private var panel: NSPanel?
+    private var leftPanel: NSPanel?
+    private var rightPanel: NSPanel?
+    private var expandPanel: NSPanel?
     private let engine: SessionEngine
+    private var geo: NotchGeometry?
+    private let hoverState = HoverState()
 
     public init(engine: SessionEngine) {
         self.engine = engine
     }
 
     public func show() {
-        guard panel == nil else { return }
-        guard let screen = NSScreen.main else { return }
+        guard leftPanel == nil else { return }
+        let geo = NotchGeometry.detect()
+        self.geo = geo
 
-        let barWidth: CGFloat = 280
-        let barHeight: CGFloat = 48
-        let screenFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
+        // 左翼: コンパクト (notch直左)
+        let wingWidth: CGFloat = 80
+        let h = geo.notchHeight
+        leftPanel = makePanel(
+            frame: NSRect(x: geo.notchLeft - wingWidth, y: geo.notchBottomY, width: wingWidth, height: h),
+            content: LeftWing(engine: engine, height: h),
+            interactive: false
+        )
 
-        // Notch下（画面上端中央）に配置
-        let x = screenFrame.midX - barWidth / 2
-        let y = screenFrame.maxY - barHeight - 6  // メニューバーの少し下
+        // 右翼: コンパクト (notch直右)
+        rightPanel = makePanel(
+            frame: NSRect(x: geo.notchRight, y: geo.notchBottomY, width: wingWidth, height: h),
+            content: RightWing(engine: engine, height: h),
+            interactive: false
+        )
 
-        let rect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
+        // ホバー検出パネル: notch領域全体 (透明、マウスイベントのみ)
+        let hoverWidth = geo.notchRight - geo.notchLeft + wingWidth * 2
+        let hoverX = geo.notchLeft - wingWidth
+        let hoverPanel = makePanel(
+            frame: NSRect(x: hoverX, y: geo.notchBottomY - 120, width: hoverWidth, height: h + 120),
+            content: HoverDetector(
+                engine: engine,
+                hoverState: hoverState,
+                notchWidth: geo.notchRight - geo.notchLeft,
+                wingWidth: wingWidth
+            ),
+            interactive: true
+        )
+        hoverPanel.ignoresMouseEvents = false
+        self.expandPanel = hoverPanel
 
+        leftPanel?.orderFrontRegardless()
+        rightPanel?.orderFrontRegardless()
+        hoverPanel.orderFrontRegardless()
+    }
+
+    public func hide() {
+        leftPanel?.close(); rightPanel?.close(); expandPanel?.close()
+        leftPanel = nil; rightPanel = nil; expandPanel = nil
+    }
+
+    public var isVisible: Bool { leftPanel != nil }
+
+    private func makePanel<V: View>(frame: NSRect, content: V, interactive: Bool) -> NSPanel {
         let panel = NSPanel(
-            contentRect: rect,
+            contentRect: frame,
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
         )
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        panel.level = .statusBar + 1
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.ignoresMouseEvents = false
-        panel.acceptsMouseMovedEvents = true
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = !interactive
 
-        let hostView = NSHostingView(rootView: NotchBarView(engine: engine))
-        panel.contentView = hostView
-
-        panel.orderFrontRegardless()
-        self.panel = panel
+        let host = NSHostingView(rootView: content)
+        host.layer?.backgroundColor = .clear
+        panel.contentView = host
+        return panel
     }
-
-    public func hide() {
-        panel?.close()
-        panel = nil
-    }
-
-    public var isVisible: Bool { panel != nil }
 }
 
-// MARK: - NotchBarView
+// MARK: - Hover State (共有)
 
-struct NotchBarView: View {
+@MainActor
+final class HoverState: ObservableObject {
+    @Published var isHovering = false
+}
+
+// MARK: - Left Wing (コンパクト: ドット + 時間)
+
+struct LeftWing: View {
     @ObservedObject var engine: SessionEngine
+    let height: CGFloat
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            if engine.isSessionActive {
+                Circle()
+                    .fill(phaseColor)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 2)
+                Text(formatCompactTime(engine.focusedElapsed))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        }
+        .padding(.trailing, 6)
+        .padding(.leading, 8)
+        .frame(height: height)
+        .background(WingShape(side: .left).fill(.black.opacity(0.85)))
+    }
+
+    private var phaseColor: Color {
+        engine.focusState?.phase.color ?? .gray
+    }
+}
+
+// MARK: - Right Wing (コンパクト: Ratio)
+
+struct RightWing: View {
+    @ObservedObject var engine: SessionEngine
+    let height: CGFloat
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if engine.isSessionActive {
+                Text("\(Int(engine.focusRatio * 100))%")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.sitboneFlow.opacity(0.8))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 8)
+        .frame(height: height)
+        .background(WingShape(side: .right).fill(.black.opacity(0.85)))
+    }
+}
+
+// MARK: - Hover Detector + Expand Panel
+
+struct HoverDetector: View {
+    @ObservedObject var engine: SessionEngine
+    @ObservedObject var hoverState: HoverState
+    let notchWidth: CGFloat
+    let wingWidth: CGFloat
     @State private var isHovering = false
 
     var body: some View {
         VStack(spacing: 0) {
+            // 上部: 透明なホバー検出エリア（notch + 翼の幅）
+            Color.clear
+                .frame(height: 32)
+
+            // 下部: 展開パネル（ホバー時のみ表示）
             if isHovering && engine.isSessionActive {
-                expandedView
+                expandedContent
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            compactBar
+
+            Spacer(minLength: 0)
         }
-        .background(
-            VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 isHovering = hovering
+                hoverState.isHovering = hovering
             }
         }
     }
 
-    // MARK: - Compact Bar (常時表示)
-
-    private var compactBar: some View {
-        HStack(spacing: 6) {
-            // タイムラインバー
-            timelineBar
-                .frame(height: 4)
-
-            // 時間表示
-            if engine.isSessionActive {
-                Text(formatTime(engine.focusedElapsed))
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(phaseColor)
-                    .fixedSize()
-            } else {
-                Text("--:--")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .frame(width: 280)
-    }
-
-    // MARK: - Expanded View (ホバー時)
-
-    private var expandedView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 状態 + セッション名
+    private var expandedContent: some View {
+        VStack(spacing: 6) {
+            // 状態 + Honest Clock
             HStack {
                 Circle()
                     .fill(phaseColor)
                     .frame(width: 8, height: 8)
-                Text(engine.focusState?.phase.label ?? "IDLE")
-                    .font(.caption.bold())
+                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
+                Text(engine.focusState?.phase.label ?? "")
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(phaseColor)
                 Spacer()
-                // Ratio
-                Text("\(Int(engine.focusRatio * 100))%")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                Text(formatCompactTime(engine.focusedElapsed))
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(phaseColor)
+                Text("/")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.3))
+                Text(formatCompactTime(engine.totalElapsed))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
             }
 
-            // Honest Clock
-            HStack {
-                Text(formatTime(engine.focusedElapsed))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.sitboneFlow)
-                Text("/")
-                    .foregroundStyle(.secondary)
-                Text(formatTime(engine.totalElapsed))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.primary)
+            // タイムライン + Ratio
+            HStack(spacing: 8) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(.white.opacity(0.1))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(phaseColor.opacity(0.7))
+                            .frame(width: max(2, geo.size.width * engine.focusRatio))
+                    }
+                }
+                .frame(height: 4)
+
+                Text("\(Int(engine.focusRatio * 100))%")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .fixedSize()
             }
 
             // カウンタ
             HStack(spacing: 12) {
-                Label("\(engine.counters.driftRecovered.value)", systemImage: "arrow.uturn.backward")
-                    .font(.caption2)
-                    .foregroundStyle(Color.sitboneFlow)
-                Label("\(engine.counters.awayRecovered.value)", systemImage: "arrow.backward")
-                    .font(.caption2)
-                    .foregroundStyle(Color.sitboneAccent)
-                Label("\(engine.counters.deserted.value)", systemImage: "xmark")
-                    .font(.caption2)
-                    .foregroundStyle(Color.sitboneAway)
+                counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
+                counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
+                counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
+                Spacer()
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .frame(width: 280)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(width: notchWidth + wingWidth * 2 - 16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.black.opacity(0.9))
+                .shadow(color: phaseColor.opacity(0.15), radius: 8, y: 4)
+        )
     }
 
-    // MARK: - Timeline Bar
-
-    private var timelineBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                // 背景
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.gray.opacity(0.2))
-
-                if engine.isSessionActive, engine.totalElapsed > 0 {
-                    // 集中時間バー
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(phaseColor.opacity(0.8))
-                        .frame(width: max(2, geo.size.width * engine.focusRatio))
-                }
-            }
+    private func counterItem(_ symbol: String, _ count: Int, _ color: Color) -> some View {
+        HStack(spacing: 2) {
+            Text(symbol)
+                .font(.system(size: 9))
+                .foregroundStyle(color)
+            Text("\(count)")
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.7))
         }
     }
-
-    // MARK: - Helpers
 
     private var phaseColor: Color {
-        engine.focusState?.phase.color ?? Color.sitboneAway
+        engine.focusState?.phase.color ?? .gray
     }
+}
+
+// MARK: - Wing Shape (notch側が直角、外側が角丸)
+
+enum WingSide { case left, right }
+
+struct WingShape: Shape {
+    let side: WingSide
+    let radius: CGFloat = 6
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        switch side {
+        case .left:
+            p.move(to: CGPoint(x: radius, y: 0))
+            p.addLine(to: CGPoint(x: rect.maxX, y: 0))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: radius, y: rect.maxY))
+            p.addArc(center: CGPoint(x: radius, y: rect.maxY - radius),
+                      radius: radius, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+            p.addLine(to: CGPoint(x: 0, y: radius))
+            p.addArc(center: CGPoint(x: radius, y: radius),
+                      radius: radius, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+        case .right:
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: rect.maxX - radius, y: 0))
+            p.addArc(center: CGPoint(x: rect.maxX - radius, y: radius),
+                      radius: radius, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
+                      radius: radius, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+            p.addLine(to: CGPoint(x: 0, y: rect.maxY))
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: - Colors
+
+extension Color {
+    static let sitboneFlow = Color(red: 0.176, green: 0.831, blue: 0.659)
+    static let sitboneDrift = Color(red: 0.957, green: 0.659, blue: 0.239)
+    static let sitboneAway = Color(red: 0.420, green: 0.447, blue: 0.498)
+    static let sitboneAccent = Color(red: 0.506, green: 0.549, blue: 0.973)
+}
+
+// MARK: - Time formatting
+
+func formatCompactTime(_ interval: TimeInterval) -> String {
+    let h = Int(interval) / 3600
+    let m = (Int(interval) % 3600) / 60
+    let s = Int(interval) % 60
+    if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+    return String(format: "%d:%02d", m, s)
 }
 
 // MARK: - Visual Effect Background
@@ -195,15 +376,11 @@ struct VisualEffectBackground: NSViewRepresentable {
     let blendingMode: NSVisualEffectView.BlendingMode
 
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .active
-        return view
+        let v = NSVisualEffectView()
+        v.material = material; v.blendingMode = blendingMode; v.state = .active
+        return v
     }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {
+        v.material = material; v.blendingMode = blendingMode
     }
 }
