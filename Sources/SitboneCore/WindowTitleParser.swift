@@ -36,4 +36,38 @@ public enum WindowTitleParser {
         // "GitHub - annenpolka/sitbone · PR #3" → ["GitHub", "annenpolka/sitbone · PR #3"] → "GitHub"
         return parts.first?.trimmingCharacters(in: .whitespaces)
     }
+
+    // MARK: - ドメインパターンによるデフォルト分類
+
+    private static let flowPatterns: [String] = [
+        "GitHub", "GitLab", "Bitbucket",
+        "Stack Overflow", "StackOverflow",
+        "docs.rs", "developer.apple.com", "developer.mozilla.org",
+        "MDN", "Hacker News",
+        "Notion", "Obsidian", "Linear",
+        "Figma", "Miro",
+        "ChatGPT", "Claude",
+        "Qiita", "Zenn",
+    ]
+
+    private static let driftPatterns: [String] = [
+        "Twitter", "X", "𝕏",
+        "Reddit", "Facebook", "Instagram", "TikTok",
+        "YouTube", "Twitch", "Netflix", "Disney",
+        "Amazon", "楽天",
+        "Yahoo", "LINE",
+        "Discord",
+    ]
+
+    /// サイト名からデフォルトのFLOW/DRIFT分類を返す（不明ならnil）
+    public static func defaultClassification(for siteName: String) -> SiteSuggestion? {
+        let lower = siteName.lowercased()
+        for pattern in flowPatterns {
+            if lower.contains(pattern.lowercased()) { return .flow }
+        }
+        for pattern in driftPatterns {
+            if lower.contains(pattern.lowercased()) { return .drift }
+        }
+        return nil
+    }
 }

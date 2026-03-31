@@ -247,32 +247,46 @@ public final class SessionEngine: ObservableObject {
         focusState = newState
         counters = newCounters
 
-        // ウィンドウ情報更新
+        // Ghost Teacher: 全アプリ + ブラウザサイトで未分類チェック
+        let prevApp = currentApp
         currentApp = deps.windowMonitor.frontmostAppName() ?? ""
         currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
-        // アプリ使用をSiteObserverに記録（1tick = 1秒）
+        // アプリ切り替え検出
+        if currentApp != prevApp && !currentApp.isEmpty {
+            if siteObserver.isNewSite(currentApp) {
+                // ドメインパターンで既知なら自動分類
+                if let defaultClass = WindowTitleParser.defaultClassification(for: currentApp) {
+                    siteObserver.classify(site: currentApp, as: defaultClass)
+                } else {
+                    pendingGhostTeacher = currentApp
+                }
+            }
+        }
+
+        // アプリ使用をSiteObserverに記録
         if !currentApp.isEmpty {
             siteObserver.record(site: currentApp, phase: newPhase, duration: 1)
         }
 
-        // ブラウザのサイト名抽出 + Ghost Teacher
+        // ブラウザのサイト名抽出
         if WindowTitleParser.isBrowser(currentApp) {
             let site = WindowTitleParser.extractSiteName(from: currentWindowTitle, app: currentApp)
-            // Ghost Teacher判定はrecordの前に（recordするとisNewSiteがfalseになる）
             if currentSite != site {
                 currentSite = site
                 if let site, siteObserver.isNewSite(site) {
-                    pendingGhostTeacher = site
+                    if let defaultClass = WindowTitleParser.defaultClassification(for: site) {
+                        siteObserver.classify(site: site, as: defaultClass)
+                    } else {
+                        pendingGhostTeacher = site
+                    }
                 }
             }
-            // 記録はGhost Teacher判定の後
             if let site {
                 siteObserver.record(site: site, phase: newPhase, duration: 1)
             }
         } else {
             currentSite = nil
-            // pendingGhostTeacherはクリアしない（ユーザーの判定を待つ）
         }
 
         // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)

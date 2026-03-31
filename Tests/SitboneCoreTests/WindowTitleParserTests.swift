@@ -53,6 +53,29 @@ final class WindowTitleParserTests: XCTestCase {
         XCTAssertEqual(result, "YouTube")
     }
 
+    // MARK: - ドメインパターンによるデフォルト分類
+
+    func testDevSiteDefaultsToFlow() {
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "GitHub"), .flow)
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "docs.rs"), .flow)
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "Stack Overflow"), .flow)
+    }
+
+    func testSocialSiteDefaultsToDrift() {
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "Twitter"), .drift)
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "Reddit"), .drift)
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "Facebook"), .drift)
+    }
+
+    func testVideoSiteDefaultsToDrift() {
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "YouTube"), .drift)
+        XCTAssertEqual(WindowTitleParser.defaultClassification(for: "Netflix"), .drift)
+    }
+
+    func testUnknownSiteReturnsNil() {
+        XCTAssertNil(WindowTitleParser.defaultClassification(for: "some-unknown-site"))
+    }
+
     // MARK: - ブラウザ判定
 
     func testIsBrowser() {
