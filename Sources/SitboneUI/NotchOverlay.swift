@@ -503,6 +503,11 @@ struct NotchDropdown: View {
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
                 Spacer(minLength: 0)
+                if engine.cachedCumulative.totalFocusedHours > 0 {
+                    Text(formatCumulativeHours(engine.cachedCumulative.totalFocusedHours))
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
             }
 
             if !engine.currentApp.isEmpty {

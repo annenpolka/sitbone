@@ -189,6 +189,8 @@ public final class SessionEngine: ObservableObject {
     @Published public private(set) var currentSite: String?
     @Published public private(set) var pendingGhostTeacher: String?
     @Published public var cumulativeFocusedHours: Double = 0
+    /// プロファイル別累計キャッシュ (ADR-0012)
+    @Published public private(set) var cachedCumulative = CumulativeRecord()
 
     // MARK: - プロファイル管理 (ADR-0011)
     @Published public private(set) var activeProfile: SessionProfile
@@ -196,6 +198,8 @@ public final class SessionEngine: ObservableObject {
     public private(set) var siteObserver: SiteObserver
     /// プロファイル別SiteObserverのキャッシュ
     private var siteObservers: [UUID: SiteObserver] = [:]
+    /// プロファイル別SessionStoreのキャッシュ (ADR-0012)
+    private var profileStores: [UUID: any SessionStoreProtocol] = [:]
 
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
@@ -204,6 +208,11 @@ public final class SessionEngine: ObservableObject {
     private let machine: FocusStateMachine
     private var tickTask: Task<Void, Never>?
     private var lastTickTime: Date?
+
+    // MARK: - Timeline tracking (ADR-0012)
+    private var timelineBlocks: [TimelineBlock] = []
+    private var currentTimelinePhase: FocusPhase?
+    private var currentPhaseDuration: TimeInterval = 0
 
     public init(deps: Dependencies) {
         self.deps = deps
@@ -225,6 +234,9 @@ public final class SessionEngine: ObservableObject {
         focusedElapsed = 0
         totalElapsed = 0
         lastTickTime = now
+        timelineBlocks = []
+        currentTimelinePhase = nil
+        currentPhaseDuration = 0
 
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -239,6 +251,26 @@ public final class SessionEngine: ObservableObject {
         tickTask = nil
         isSessionActive = false
 
+        // SessionRecord生成 (ADR-0012)
+        let timeline = flushTimeline()
+        if let startedAt = sessionStartedAt {
+            let now = deps.clock.now
+            let record = SessionRecord(
+                type: activeProfile.name,
+                startedAt: startedAt,
+                endedAt: now,
+                realElapsed: totalElapsed,
+                focusedElapsed: focusedElapsed,
+                focusRatio: focusRatio,
+                driftRecovered: counters.driftRecovered.value,
+                awayRecovered: counters.awayRecovered.value,
+                deserted: counters.deserted.value,
+                timeline: timeline
+            )
+            lastSessionRecord = record
+            saveSessionRecord(record)
+        }
+
         // セッション累積データを保存
         saveCumulativeData()
 
@@ -249,17 +281,31 @@ public final class SessionEngine: ObservableObject {
     private func performTick() async {
         guard let state = focusState else { return }
         let now = deps.clock.now
+        let oldPhase = state.phase
 
+        let delta: TimeInterval
         if let last = lastTickTime {
-            let delta = now.timeIntervalSince(last)
+            delta = now.timeIntervalSince(last)
             totalElapsed += delta
-            if state.phase == .flow {
+            if oldPhase == .flow {
                 focusedElapsed += delta
             }
+        } else {
+            delta = 0
         }
-        lastTickTime = now
 
-        let oldPhase = state.phase
+        // Timeline tracking (ADR-0012)
+        if currentTimelinePhase == oldPhase {
+            currentPhaseDuration += delta
+        } else {
+            if let prevPhase = currentTimelinePhase, currentPhaseDuration > 0 {
+                timelineBlocks.append(TimelineBlock(state: prevPhase, duration: currentPhaseDuration))
+            }
+            currentTimelinePhase = oldPhase
+            currentPhaseDuration = delta
+        }
+
+        lastTickTime = now
 
         // 現在のサイト/アプリがDRIFT分類かチェック
         let isDriftSite: Bool = {
@@ -327,6 +373,9 @@ public final class SessionEngine: ObservableObject {
         let profile = SessionProfile(name: name, colorHue: colorHue)
         profiles.append(profile)
         siteObservers[profile.id] = SiteObserver()
+        if persistenceEnabled {
+            profileStores[profile.id] = JSONSessionStore(baseDir: profileDir(for: profile))
+        }
         saveProfiles()
         return profile
     }
@@ -340,8 +389,26 @@ public final class SessionEngine: ObservableObject {
         }
 
         if isSessionActive {
-            cumulativeFocusedHours += focusedElapsed / 3600.0
-            if persistenceEnabled { saveCumulativeData() }
+            // セッション分割: 現プロファイルの累計に加算 + SessionRecord保存
+            let timeline = flushTimeline()
+            if let startedAt = sessionStartedAt {
+                let now = deps.clock.now
+                let record = SessionRecord(
+                    type: activeProfile.name,
+                    startedAt: startedAt,
+                    endedAt: now,
+                    realElapsed: totalElapsed,
+                    focusedElapsed: focusedElapsed,
+                    focusRatio: focusRatio,
+                    driftRecovered: counters.driftRecovered.value,
+                    awayRecovered: counters.awayRecovered.value,
+                    deserted: counters.deserted.value,
+                    timeline: timeline
+                )
+                lastSessionRecord = record
+                saveSessionRecord(record)
+            }
+            saveCumulativeData()
         }
 
         // プロファイル切替: SiteObserverを差し替え
@@ -361,6 +428,9 @@ public final class SessionEngine: ObservableObject {
             totalElapsed = 0
             sessionStartedAt = now
             lastTickTime = now
+            timelineBlocks = []
+            currentTimelinePhase = nil
+            currentPhaseDuration = 0
         }
 
         if persistenceEnabled {
@@ -398,6 +468,11 @@ public final class SessionEngine: ObservableObject {
         }
     }
 
+    /// アクティブプロファイルのstore
+    private var activeStore: any SessionStoreProtocol {
+        profileStores[activeProfile.id] ?? deps.store
+    }
+
     /// テスト用: ファイルI/Oを無効化
     public var persistenceEnabled: Bool = true
 
@@ -409,6 +484,40 @@ public final class SessionEngine: ObservableObject {
     public var focusRatio: Double {
         guard totalElapsed > 0 else { return 0 }
         return focusedElapsed / totalElapsed
+    }
+
+    /// 現在のtimeline（確定済みブロック + 進行中ブロック）
+    public var currentTimeline: [TimelineBlock] {
+        var result = timelineBlocks
+        if let phase = currentTimelinePhase, currentPhaseDuration > 0 {
+            result.append(TimelineBlock(state: phase, duration: currentPhaseDuration))
+        }
+        return result
+    }
+
+    /// timelineを確定して返す（endSession時に使用）
+    public func flushTimeline() -> [TimelineBlock] {
+        if let phase = currentTimelinePhase, currentPhaseDuration > 0 {
+            timelineBlocks.append(TimelineBlock(state: phase, duration: currentPhaseDuration))
+            currentPhaseDuration = 0
+            currentTimelinePhase = nil
+        }
+        return timelineBlocks
+    }
+
+    /// 直近のセッション記録（テスト・UI用）
+    @Published public private(set) var lastSessionRecord: SessionRecord?
+
+    /// セッション記録をstoreに保存
+    private func saveSessionRecord(_ record: SessionRecord) {
+        guard persistenceEnabled else { return }
+        let store = activeStore
+        Task { try? await store.save(record) }
+    }
+
+    /// テスト用: performTickを外部から呼べるようにする
+    public func performTickForTest() async {
+        await performTick()
     }
 
     // MARK: - 永続化
@@ -444,10 +553,11 @@ public final class SessionEngine: ObservableObject {
               !decoded.isEmpty else { return }
         profiles = decoded
         activeProfile = decoded[0]
-        // 各プロファイルのSiteObserverを生成
+        // 各プロファイルのSiteObserver + SessionStoreを生成
         for profile in decoded {
             let observer = SiteObserver()
             siteObservers[profile.id] = observer
+            profileStores[profile.id] = JSONSessionStore(baseDir: profileDir(for: profile))
         }
         siteObserver = siteObservers[activeProfile.id] ?? SiteObserver()
     }
@@ -478,6 +588,45 @@ public final class SessionEngine: ObservableObject {
         try? FileManager.default.removeItem(at: legacyURL)
     }
 
+    /// 旧グローバルcumulative.jsonをdefaultプロファイルにマイグレーション (ADR-0012)
+    public func migrateCumulativeData() {
+        let legacyURL = Self.cumulativeURL
+        guard FileManager.default.fileExists(atPath: legacyURL.path),
+              let data = try? Data(contentsOf: legacyURL),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+        let hours = (dict["totalFocusedHours"] as? Double) ?? 0
+        let driftRec = (dict["lifetimeDriftRecovered"] as? Int) ?? 0
+        let awayRec = (dict["lifetimeAwayRecovered"] as? Int) ?? 0
+        let deserted = (dict["lifetimeDeserted"] as? Int) ?? 0
+
+        let legacyRecord = CumulativeRecord(
+            totalFocusedHours: hours,
+            lifetimeDriftRecovered: driftRec,
+            lifetimeAwayRecovered: awayRec,
+            lifetimeDeserted: deserted
+        )
+
+        // defaultプロファイルの既存累計にマージ
+        cachedCumulative.accumulate(
+            focusedHours: legacyRecord.totalFocusedHours,
+            driftRecovered: legacyRecord.lifetimeDriftRecovered,
+            awayRecovered: legacyRecord.lifetimeAwayRecovered,
+            deserted: legacyRecord.lifetimeDeserted
+        )
+        cumulativeFocusedHours = cachedCumulative.totalFocusedHours
+
+        // 保存
+        if persistenceEnabled {
+            let record = cachedCumulative
+            let store = activeStore
+            Task { try? await store.saveCumulative(record) }
+        }
+
+        // 旧ファイル削除
+        try? FileManager.default.removeItem(at: legacyURL)
+    }
+
     public func saveClassifications() {
         saveClassificationsForActiveProfile()
     }
@@ -490,22 +639,30 @@ public final class SessionEngine: ObservableObject {
 
     /// 累積データをロード
     public func loadCumulativeData() {
-        guard let data = try? Data(contentsOf: Self.cumulativeURL),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
-              let hours = dict["totalFocusedHours"] else { return }
-        cumulativeFocusedHours = hours
+        let store = activeStore
+        Task {
+            let record = (try? await store.loadCumulative()) ?? CumulativeRecord()
+            await MainActor.run {
+                self.cachedCumulative = record
+                self.cumulativeFocusedHours = record.totalFocusedHours
+            }
+        }
     }
 
-    /// 累積データを保存
+    /// 累積データを保存（キャッシュに加算→永続化）(ADR-0012)
     public func saveCumulativeData() {
-        cumulativeFocusedHours += focusedElapsed / 3600.0
-        let dict: [String: Any] = [
-            "totalFocusedHours": cumulativeFocusedHours,
-            "lifetimeDriftRecovered": counters.driftRecovered.value,
-            "lifetimeAwayRecovered": counters.awayRecovered.value,
-            "lifetimeDeserted": counters.deserted.value,
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
-        try? data.write(to: Self.cumulativeURL)
+        cachedCumulative.accumulate(
+            focusedHours: focusedElapsed / 3600.0,
+            driftRecovered: counters.driftRecovered.value,
+            awayRecovered: counters.awayRecovered.value,
+            deserted: counters.deserted.value
+        )
+        cumulativeFocusedHours = cachedCumulative.totalFocusedHours
+
+        if persistenceEnabled {
+            let record = cachedCumulative
+            let store = activeStore
+            Task { try? await store.saveCumulative(record) }
+        }
     }
 }

@@ -156,6 +156,20 @@ public struct MenuBarView: View {
                     }
                 }
             }
+
+            // 累計時間 (ADR-0012)
+            if engine.cachedCumulative.totalFocusedHours > 0 {
+                Divider()
+                HStack {
+                    Text("Total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(formatCumulativeHours(engine.cachedCumulative.totalFocusedHours))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -290,6 +304,14 @@ func formatTime(_ interval: TimeInterval) -> String {
         return String(format: "%d:%02d:%02d", h, m, s)
     }
     return String(format: "%d:%02d", m, s)
+}
+
+func formatCumulativeHours(_ hours: Double) -> String {
+    if hours >= 1.0 {
+        return String(format: "%.1fh", hours)
+    }
+    let minutes = Int(hours * 60)
+    return "\(minutes)m"
 }
 
 // MARK: - MenuBar Icon

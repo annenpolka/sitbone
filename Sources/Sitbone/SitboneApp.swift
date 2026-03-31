@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine.loadProfiles()
             engine.loadClassifications()
             engine.migrateClassifications()  // 旧形式のマイグレーション
+            engine.migrateCumulativeData()  // グローバルcumulative→プロファイル別 (ADR-0012)
             engine.loadCumulativeData()
 
             let controller = NotchOverlayController(engine: engine)

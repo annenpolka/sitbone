@@ -46,6 +46,11 @@ let package = Package(
             swiftSettings: commonSwiftSettings
         ),
         .testTarget(
+            name: "SitboneDataTests",
+            dependencies: ["SitboneData"],
+            swiftSettings: commonSwiftSettings
+        ),
+        .testTarget(
             name: "SitboneUITests",
             dependencies: ["SitboneUI"],
             swiftSettings: commonSwiftSettings
