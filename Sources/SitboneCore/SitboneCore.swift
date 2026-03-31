@@ -153,6 +153,8 @@ public final class SessionEngine: ObservableObject {
     @Published public private(set) var sessionStartedAt: Date?
     @Published public private(set) var focusedElapsed: TimeInterval = 0
     @Published public private(set) var totalElapsed: TimeInterval = 0
+    @Published public private(set) var currentApp: String = ""
+    @Published public private(set) var currentWindowTitle: String = ""
 
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
@@ -213,6 +215,10 @@ public final class SessionEngine: ObservableObject {
         let newPhase = newState.phase
         focusState = newState
         counters = newCounters
+
+        // ウィンドウ情報更新
+        currentApp = deps.windowMonitor.frontmostAppName() ?? ""
+        currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
         // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)
         if oldPhase == .flow && newPhase == .drift {

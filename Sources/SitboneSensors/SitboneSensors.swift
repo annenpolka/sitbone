@@ -29,6 +29,7 @@ public protocol ClockProtocol: Sendable {
 
 public protocol WindowMonitorProtocol: Sendable {
     func frontmostAppName() -> String?
+    func frontmostWindowTitle() -> String?
 }
 
 public protocol IdleDetectorProtocol: Sendable {
@@ -86,6 +87,17 @@ public struct NSWorkspaceWindowMonitor: WindowMonitorProtocol, Sendable {
     public func frontmostAppName() -> String? {
         NSWorkspace.shared.frontmostApplication?.localizedName
     }
+
+    public func frontmostWindowTitle() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var value: AnyObject?
+        let err = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &value)
+        guard err == .success, let window = value else { return nil }
+        var title: AnyObject?
+        AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title)
+        return title as? String
+    }
 }
 #endif
 
@@ -98,7 +110,10 @@ public final class MockWindowMonitor: WindowMonitorProtocol, @unchecked Sendable
         self.appName = appName
     }
 
+    public var windowTitle: String?
+
     public func frontmostAppName() -> String? { appName }
+    public func frontmostWindowTitle() -> String? { windowTitle }
 }
 
 public final class MockIdleDetector: IdleDetectorProtocol, @unchecked Sendable {

@@ -81,18 +81,18 @@ public final class NotchOverlayController {
         let geo = NotchGeometry.detect()
         self.geo = geo
 
-        // 左翼: notchに溶け込むミニマルな翼（グローインジケーターに合わせた最小幅）
-        let wingWidth: CGFloat = 20
+        // 翼: notchに2ptオーバーラップして隙間をなくす
+        let wingWidth: CGFloat = 22
+        let overlap: CGFloat = 2
         let h = geo.notchHeight
         leftPanel = makePanel(
-            frame: NSRect(x: geo.notchLeft - wingWidth, y: geo.notchBottomY, width: wingWidth, height: h),
+            frame: NSRect(x: geo.notchLeft - wingWidth + overlap, y: geo.notchBottomY, width: wingWidth, height: h),
             content: LeftWing(engine: engine, height: h),
             interactive: false
         )
 
-        // 右翼: コンパクト (notch直右)
         rightPanel = makePanel(
-            frame: NSRect(x: geo.notchRight, y: geo.notchBottomY, width: wingWidth, height: h),
+            frame: NSRect(x: geo.notchRight - overlap, y: geo.notchBottomY, width: wingWidth, height: h),
             content: RightWing(engine: engine, height: h),
             interactive: false
         )
@@ -339,38 +339,89 @@ enum WingSide { case left, right }
 
 struct WingShape: Shape {
     let side: WingSide
-    // 外側の角丸をnotchの角丸に合わせる（macOS notchは約10pt角丸）
-    let radius: CGFloat = 10
+    // 外側: notchの物理的な角丸に合わせる
+    let outerR: CGFloat = 8
+    // 内側(notch側): 凹面カーブでnotchの角に滑らかに接続
+    let innerR: CGFloat = 7
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
         switch side {
         case .left:
-            // 上辺: 左上が角丸、右上はnotchに直結（直角）
-            p.move(to: CGPoint(x: radius, y: 0))
-            p.addLine(to: CGPoint(x: rect.maxX, y: 0))         // → notch接合（直角）
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY)) // ↓ notch接合（直角）
-            p.addLine(to: CGPoint(x: radius, y: rect.maxY))
-            // 左下の角丸
-            p.addArc(center: CGPoint(x: radius, y: rect.maxY - radius),
-                      radius: radius, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
-            p.addLine(to: CGPoint(x: 0, y: radius))
-            // 左上の角丸
-            p.addArc(center: CGPoint(x: radius, y: radius),
-                      radius: radius, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            // 左上: 外側の角丸（凸）
+            p.move(to: CGPoint(x: outerR, y: 0))
+            // 上辺 → notch側の手前で止まる
+            p.addLine(to: CGPoint(x: rect.maxX, y: 0))
+            // 右上: notchの角に凹面カーブで接続
+            // notchの角は下に向かって丸いので、翼の右上は凹面で受ける
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - innerR))
+            p.addArc(
+                center: CGPoint(x: rect.maxX + innerR, y: rect.maxY - innerR),
+                radius: innerR,
+                startAngle: .degrees(180),
+                endAngle: .degrees(90),
+                clockwise: true  // 凹面（時計回り = 内側にくぼむ）
+            )
+            // 下辺
+            p.addLine(to: CGPoint(x: outerR, y: rect.maxY))
+            // 左下: 外側の角丸（凸）
+            p.addArc(
+                center: CGPoint(x: outerR, y: rect.maxY - outerR),
+                radius: outerR, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
+            )
+            // 左辺
+            p.addLine(to: CGPoint(x: 0, y: outerR))
+            // 左上: 外側の角丸（凸）
+            p.addArc(
+                center: CGPoint(x: outerR, y: outerR),
+                radius: outerR, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
+            )
 
         case .right:
-            // 上辺: 左上はnotchに直結（直角）、右上が角丸
-            p.move(to: CGPoint(x: 0, y: 0))                    // notch接合（直角）
-            p.addLine(to: CGPoint(x: rect.maxX - radius, y: 0))
-            // 右上の角丸
-            p.addArc(center: CGPoint(x: rect.maxX - radius, y: radius),
-                      radius: radius, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
-            // 右下の角丸
-            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
-                      radius: radius, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-            p.addLine(to: CGPoint(x: 0, y: rect.maxY))         // notch接合（直角）
+            // 左上: notchの角に凹面カーブで接続
+            p.move(to: CGPoint(x: 0, y: rect.maxY))
+            p.addLine(to: CGPoint(x: 0, y: rect.maxY - innerR))
+            // 凹面でnotchの左下角に接続
+            // notch右下の角は上に丸いので、翼の左上は凹面で受ける
+            // Wait - the notch curves happen at the bottom of the notch
+            // From the wing's perspective (flipped y in SwiftUI): top of wing connects to notch bottom
+            p.addArc(
+                center: CGPoint(x: -innerR, y: rect.maxY - innerR),
+                radius: innerR,
+                startAngle: .degrees(0),
+                endAngle: .degrees(270),
+                clockwise: true
+            )
+            // 上辺
+            // Actually let me redo this more carefully
+            p = Path()
+            // notch側の凹面接続から開始
+            p.move(to: CGPoint(x: 0, y: 0))
+            // 上辺 → 右上
+            p.addLine(to: CGPoint(x: rect.maxX - outerR, y: 0))
+            // 右上: 外側の角丸
+            p.addArc(
+                center: CGPoint(x: rect.maxX - outerR, y: outerR),
+                radius: outerR, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false
+            )
+            // 右辺
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - outerR))
+            // 右下: 外側の角丸
+            p.addArc(
+                center: CGPoint(x: rect.maxX - outerR, y: rect.maxY - outerR),
+                radius: outerR, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
+            )
+            // 下辺 → notch側
+            p.addLine(to: CGPoint(x: 0, y: rect.maxY))
+            // 左下: notchの角に凹面カーブで接続
+            p.addArc(
+                center: CGPoint(x: -innerR, y: rect.maxY - innerR),
+                radius: innerR,
+                startAngle: .degrees(90),
+                endAngle: .degrees(0),
+                clockwise: true
+            )
+            p.addLine(to: CGPoint(x: 0, y: 0))
         }
         p.closeSubpath()
         return p
