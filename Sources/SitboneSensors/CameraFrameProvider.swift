@@ -84,8 +84,8 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
                 // 待っている間にフレームが来たかもしれない
                 let fresh = self.lock.withLock { state -> CGImage? in
                     guard let image = state.image,
-                          let at = state.capturedAt,
-                          Date().timeIntervalSince(at) < self.frameTTL else {
+                          let captureTime = state.capturedAt,
+                          Date().timeIntervalSince(captureTime) < self.frameTTL else {
                         return nil
                     }
                     return image
