@@ -62,6 +62,26 @@ struct ProfilePersistenceRegressionTests {
         #expect(engine2.siteObserver.classification(for: "YouTube") == .flow)
     }
 
+    @Test("profiles.json がなくても default プロファイルが次回起動で復元される")
+    @MainActor
+    func defaultProfilePersistsAcrossRestartWithoutPreexistingProfilesFile() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+
+        let engine1 = SessionEngine(deps: .test(), persistenceRoot: dir)
+        engine1.loadProfiles()
+        let originalDefaultID = engine1.activeProfile.id
+        engine1.classifySite("YouTube", as: .drift)
+
+        let engine2 = SessionEngine(deps: .test(), persistenceRoot: dir)
+        engine2.loadProfiles()
+        engine2.loadClassifications()
+
+        #expect(engine2.activeProfile.id == originalDefaultID)
+        #expect(engine2.activeProfile.name == "default")
+        #expect(engine2.siteObserver.classification(for: "YouTube") == .drift)
+    }
+
     @Test("loadProfiles() で古い名前ベースと孤児ディレクトリを掃除する")
     @MainActor
     func loadProfilesCleansLegacyAndOrphanedDirectories() throws {

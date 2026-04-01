@@ -696,6 +696,10 @@ public final class SessionEngine: ObservableObject {
 
     public func loadProfiles() {
         guard persistenceEnabled else { return }
+        guard FileManager.default.fileExists(atPath: profilesURL.path) else {
+            saveProfiles()
+            return
+        }
         guard let data = try? Data(contentsOf: profilesURL),
               let decoded = try? JSONDecoder().decode([SessionProfile].self, from: data),
               !decoded.isEmpty else { return }
