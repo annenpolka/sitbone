@@ -76,7 +76,7 @@ public struct DayRecord: Codable, Sendable {
     }
 }
 
-public struct CumulativeRecord: Codable, Sendable {
+public struct CumulativeRecord: Codable, Sendable, Equatable {
     public var totalFocusedHours: Double
     public var lifetimeDriftRecovered: Int
     public var lifetimeAwayRecovered: Int
@@ -92,6 +92,19 @@ public struct CumulativeRecord: Codable, Sendable {
         self.lifetimeDriftRecovered = lifetimeDriftRecovered
         self.lifetimeAwayRecovered = lifetimeAwayRecovered
         self.lifetimeDeserted = lifetimeDeserted
+    }
+
+    /// セッション結果を累計に加算する
+    public mutating func accumulate(
+        focusedHours: Double,
+        driftRecovered: Int,
+        awayRecovered: Int,
+        deserted: Int
+    ) {
+        totalFocusedHours += focusedHours
+        lifetimeDriftRecovered += driftRecovered
+        lifetimeAwayRecovered += awayRecovered
+        lifetimeDeserted += deserted
     }
 }
 

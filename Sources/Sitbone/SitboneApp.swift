@@ -7,35 +7,26 @@ import SitboneData
 @main
 struct SitboneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var engine = SessionEngine(deps: .live)
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(engine: engine)
-                .onAppear {
-                    appDelegate.setupNotch(engine: engine)
-                }
-                .onChange(of: engine.isSessionActive) { _, active in
-                    if active {
-                        appDelegate.notchController?.show()
-                    } else {
-                        appDelegate.notchController?.hide()
-                    }
-                }
+            MenuBarView(engine: appDelegate.engine)
         } label: {
-            let phase = engine.focusState?.phase
+            let phase = appDelegate.engine.focusState?.phase
             Image(nsImage: menuBarIcon(phase: phase))
         }
         .menuBarExtraStyle(.window)
     }
 }
 
-// MARK: - AppDelegate (二重起動防止 + Notch管理)
+// MARK: - AppDelegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var notchController: NotchOverlayController?
+    @MainActor let engine = SessionEngine(deps: .live)
+    @MainActor var notchController: NotchOverlayController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 二重起動チェック
         let myPID = ProcessInfo.processInfo.processIdentifier
         let myName = ProcessInfo.processInfo.processName
         let running = NSWorkspace.shared.runningApplications.filter {
@@ -47,11 +38,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
-    }
 
-    @MainActor
-    func setupNotch(engine: SessionEngine) {
-        guard notchController == nil else { return }
-        notchController = NotchOverlayController(engine: engine)
+        Task { @MainActor in
+            // 永続データをロード
+            engine.loadProfiles()
+            engine.loadClassifications()
+            engine.migrateClassifications()  // 旧形式のマイグレーション
+            engine.migrateCumulativeData()  // グローバルcumulative→プロファイル別 (ADR-0012)
+            engine.loadCumulativeData()
+
+            let controller = NotchOverlayController(engine: engine)
+            self.notchController = controller
+            controller.show()
+
+            #if DEBUG
+            let autoStart = true
+            #else
+            let autoStart = CommandLine.arguments.contains("--auto-start")
+            #endif
+
+            // DRIFT効果音 (ADR-0007)
+            engine.onDriftEntered = {
+                NSSound(named: "Tink")?.play()
+            }
+
+            if autoStart {
+                engine.startSession()
+            }
+        }
     }
 }

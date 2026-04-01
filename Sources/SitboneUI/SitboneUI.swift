@@ -4,17 +4,7 @@ public import SwiftUI
 public import SitboneCore
 public import SitboneData
 
-// MARK: - 色定義
-
-extension Color {
-    static let sitboneFlow = Color(red: 0.176, green: 0.831, blue: 0.659)   // #2DD4A8
-    static let sitboneDrift = Color(red: 0.957, green: 0.659, blue: 0.239)  // #F4A83D
-    static let sitboneAway = Color(red: 0.420, green: 0.447, blue: 0.498)   // #6B7280
-    static let sitboneText = Color(red: 0.898, green: 0.906, blue: 0.922)   // #E5E7EB
-    static let sitboneAccent = Color(red: 0.506, green: 0.549, blue: 0.973) // #818CF8
-}
-
-// MARK: - フォーカス状態の色
+// MARK: - フォーカス状態の色（Color定義はNotchOverlay.swiftに集約）
 
 extension FocusPhase {
     public var color: Color {
@@ -54,6 +44,8 @@ public struct MenuBarView: View {
                 inactiveView
             }
 
+            Divider()
+            profileSection
             Divider()
             sessionToggle
             Divider()
@@ -126,11 +118,57 @@ public struct MenuBarView: View {
                 Spacer()
             }
 
-            // カウンタ: ↩ drift_recovered, ← away_recovered, ✕ deserted
+            // カウンタ
             HStack(spacing: 16) {
                 counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
                 counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
                 counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
+            }
+
+            // 現在のアプリ/サイト
+            if !engine.currentApp.isEmpty {
+                Divider()
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(engine.focusState?.phase.color ?? .gray)
+                        .frame(width: 6, height: 6)
+                    Text(engine.currentApp)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                    if let site = engine.currentSite, site != engine.currentApp {
+                        Text("· \(site)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    // 分類状態
+                    let classification = engine.siteObserver.effectiveClassification(
+                        for: engine.currentSite ?? engine.currentApp
+                    )
+                    if classification == .flow {
+                        Text("FLOW")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.sitboneFlow)
+                    } else if classification == .drift {
+                        Text("DRIFT")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.sitboneDrift)
+                    }
+                }
+            }
+
+            // 累計時間 (ADR-0012)
+            if engine.cachedCumulative.totalFocusedHours > 0 {
+                Divider()
+                HStack {
+                    Text("Total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(formatCumulativeHours(engine.cachedCumulative.totalFocusedHours))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -140,6 +178,93 @@ public struct MenuBarView: View {
             Text("No active session")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @State private var editingProfileId: UUID?
+    @State private var editName: String = ""
+
+    private var profileSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Profiles")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            ForEach(engine.profiles) { profile in
+                let isActive = profile.id == engine.activeProfile.id
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color(hue: profile.colorHue, saturation: 0.7, brightness: isActive ? 0.9 : 0.4))
+                        .frame(width: 8, height: 8)
+
+                    if editingProfileId == profile.id {
+                        TextField("name", text: $editName)
+                            .font(.caption)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                if !editName.isEmpty {
+                                    engine.renameProfile(profile, to: editName)
+                                }
+                                editingProfileId = nil
+                            }
+                    } else {
+                        Text(profile.name)
+                            .font(.caption)
+                            .foregroundStyle(isActive ? .primary : .secondary)
+
+                        Spacer()
+
+                        if !isActive {
+                            Button("Switch") {
+                                engine.switchProfile(to: profile)
+                            }
+                            .font(.caption)
+                        } else {
+                            Text("active")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        // 編集ボタン
+                        Button {
+                            editingProfileId = profile.id
+                            editName = profile.name
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        // 削除（アクティブでなければ）
+                        if !isActive && engine.profiles.count > 1 {
+                            Button {
+                                engine.deleteProfile(profile)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.red.opacity(0.5))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            // 新規作成
+            Button {
+                let name = "profile \(engine.profiles.count)"
+                let p = engine.createProfile(name: name)
+                editingProfileId = p.id
+                editName = name
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus.circle")
+                        .font(.caption)
+                    Text("New Profile")
+                        .font(.caption)
+                }
+            }
         }
     }
 
@@ -179,6 +304,14 @@ func formatTime(_ interval: TimeInterval) -> String {
         return String(format: "%d:%02d:%02d", h, m, s)
     }
     return String(format: "%d:%02d", m, s)
+}
+
+func formatCumulativeHours(_ hours: Double) -> String {
+    if hours >= 1.0 {
+        return String(format: "%.1fh", hours)
+    }
+    let minutes = Int(hours * 60)
+    return "\(minutes)m"
 }
 
 // MARK: - MenuBar Icon
