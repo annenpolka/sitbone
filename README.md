@@ -17,6 +17,7 @@ macOS native focus tracker. 一万時間の集中を計測する。
 - macOS 15+ (Sequoia)
 - Swift 6.0+
 - MacBook with notch (notch overlay用。なくても動作はする)
+- カメラ (presence検出用。なくてもidle時間のみで動作する)
 
 ## Build & Run
 
@@ -24,8 +25,11 @@ macOS native focus tracker. 一万時間の集中を計測する。
 # ビルド
 swift build
 
-# 実行
-swift run Sitbone
+# .appバンドル生成 (カメラ権限・アクセシビリティ権限に必要)
+make app
+
+# .appバンドルで起動
+make run
 
 # テスト
 swift test
@@ -33,6 +37,8 @@ swift test
 # カバレッジ
 make coverage
 ```
+
+初回起動時にカメラ権限とアクセシビリティ権限のダイアログが表示される。両方許可すること。
 
 ## Development
 
@@ -65,7 +71,7 @@ GitHub Actions では `pull_request` と `main` への push ごとに `make test
 Sitbone (App shell: @main, MenuBarExtra)
  └─ SitboneUI (NotchOverlay, MenuBar, Ghost Teacher)
      └─ SitboneCore (FocusStateMachine, SessionEngine, SiteObserver)
-         ├─ SitboneSensors (Window, Idle, Presence detection)
+         ├─ SitboneSensors (Window, Idle, Camera, Gaze detection)
          └─ SitboneData (JSON persistence, SessionStore)
 ```
 
@@ -77,6 +83,7 @@ Sitbone (App shell: @main, MenuBarExtra)
 |---------|-------------|
 | **FocusState** | FLOW / DRIFT / AWAY の3状態。enum + since で不正遷移を型で排除 |
 | **FocusStateMachine** | idle時間 + presence判定で状態遷移。T1=15s, T2=90s |
+| **PresenceArbiter** | カメラ(顔検出) + 視線(正面性)のセンサー融合。EMA平滑化で瞬間的な視線逸脱を吸収 |
 | **SessionEngine** | セッション管理。tick駆動、カウンタ蓄積、プロファイル切替 |
 | **SiteObserver** | アプリ/サイトの使用時間記録 + FLOW/DRIFT分類 |
 | **Ghost Teacher** | 未分類サイト検出時のインライン分類UI |
@@ -87,6 +94,8 @@ Sitbone (App shell: @main, MenuBarExtra)
 ```
 ~/.sitbone/
 ├── profiles.json                    # プロファイル一覧
+├── logs/
+│   └── presence_*.csv               # センサー融合ログ (診断用)
 └── profiles/
     └── <UUID>/
         ├── classifications.json     # サイト分類 (FLOW/DRIFT)
