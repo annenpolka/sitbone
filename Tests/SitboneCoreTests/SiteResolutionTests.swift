@@ -199,6 +199,28 @@ final class SiteResolutionTests: XCTestCase {
         XCTAssertEqual(result.site, "YouTube")
     }
 
+    // MARK: - Chromeメモリ警告のジャンク除外
+
+    func testChromeMemoryWarningFiltered() {
+        let observer = SiteObserver()
+
+        let result = SiteResolver.resolve(
+            title: "Course: Snowflake Snowpro Core | Udemy - メモリを大量に使用 - 1.5 GB - Google Chrome - 克臣 (ポルカ)",
+            app: "Google Chrome",
+            observer: observer
+        )
+        XCTAssertNotEqual(result.site, "1.5 GB")
+        XCTAssertNotEqual(result.site, "メモリを大量に使用")
+        XCTAssertEqual(result.site, "Udemy")
+    }
+
+    func testSizeNotationIsJunk() {
+        XCTAssertTrue(SegmentScorer.isJunk("1.5 GB"))
+        XCTAssertTrue(SegmentScorer.isJunk("500 MB"))
+        XCTAssertTrue(SegmentScorer.isJunk("2 TB"))
+        XCTAssertFalse(SegmentScorer.isJunk("YouTube"))
+    }
+
     // MARK: - ブラウザアプリ抑制
 
     func testBrowserAppSuppressed() {

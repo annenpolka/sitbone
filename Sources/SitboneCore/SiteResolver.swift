@@ -50,7 +50,14 @@ public enum SegmentScorer {
     private static let junk: Set<String> = [
         "new tab", "start page", "home", "untitled", "about:blank",
         "新しいタブ", "ホーム", "スタートページ",
+        "メモリを大量に使用",
     ]
+
+    /// サイズ表記パターン（"1.5 GB", "500 MB"等）
+    private static let sizePattern = try! NSRegularExpression(
+        pattern: #"^\d+(\.\d+)?\s*(GB|MB|KB|TB|B)$"#,
+        options: .caseInsensitive
+    )
 
     /// セグメントのサイト名らしさをスコアリング
     public static func score(_ segment: String, isFirst: Bool, isLast: Bool) -> Double {
@@ -92,7 +99,11 @@ public enum SegmentScorer {
 
     /// ジャンクかどうか
     public static func isJunk(_ segment: String) -> Bool {
-        junk.contains(segment.lowercased())
+        if junk.contains(segment.lowercased()) { return true }
+        // サイズ表記（"1.5 GB", "500 MB"等）はジャンク
+        let range = NSRange(segment.startIndex..., in: segment)
+        if sizePattern.firstMatch(in: segment, range: range) != nil { return true }
+        return false
     }
 }
 
