@@ -57,12 +57,14 @@ final class SessionProfileTests: XCTestCase {
 
     func testEngineHasDefaultProfile() {
         let engine = SessionEngine(deps: .test())
+        engine.persistenceEnabled = false
         XCTAssertEqual(engine.activeProfile.name, "default")
         XCTAssertEqual(engine.profiles.count, 1)
     }
 
     func testCreateNewProfile() {
         let engine = SessionEngine(deps: .test())
+        engine.persistenceEnabled = false
         engine.createProfile(name: "coding")
         XCTAssertEqual(engine.profiles.count, 2)
         XCTAssertEqual(engine.profiles[1].name, "coding")
@@ -70,6 +72,7 @@ final class SessionProfileTests: XCTestCase {
 
     func testSwitchProfile() {
         let engine = SessionEngine(deps: .test())
+        engine.persistenceEnabled = false
         engine.startSession()
 
         let coding = engine.createProfile(name: "coding")
@@ -103,6 +106,7 @@ final class SessionProfileTests: XCTestCase {
 
     func testDeleteProfile() {
         let engine = SessionEngine(deps: .test())
+        engine.persistenceEnabled = false
         let coding = engine.createProfile(name: "coding")
         XCTAssertEqual(engine.profiles.count, 2)
 
@@ -113,6 +117,7 @@ final class SessionProfileTests: XCTestCase {
 
     func testCannotDeleteActiveProfile() {
         let engine = SessionEngine(deps: .test())
+        engine.persistenceEnabled = false
         let defaultProfile = engine.activeProfile
         engine.deleteProfile(defaultProfile)
         // アクティブプロファイルは削除できない
@@ -121,6 +126,7 @@ final class SessionProfileTests: XCTestCase {
 
     func testCannotDeleteLastProfile() {
         let engine = SessionEngine(deps: .test())
+        engine.persistenceEnabled = false
         engine.deleteProfile(engine.activeProfile)
         XCTAssertEqual(engine.profiles.count, 1)  // 最後の1つは削除不可
     }

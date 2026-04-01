@@ -270,6 +270,7 @@ public final class SessionEngine: ObservableObject {
 
     private let deps: Dependencies
     private let machine: FocusStateMachine
+    private let persistenceRoot: URL
     private var tickTask: Task<Void, Never>?
     private var lastTickTime: Date?
 
@@ -278,8 +279,14 @@ public final class SessionEngine: ObservableObject {
     private var currentTimelinePhase: FocusPhase?
     private var currentPhaseDuration: TimeInterval = 0
 
-    public init(deps: Dependencies) {
+    public init(deps: Dependencies, persistenceRoot: URL? = nil) {
         self.deps = deps
+        let resolvedPersistenceRoot = persistenceRoot ?? Self.defaultPersistenceRoot()
+        try? FileManager.default.createDirectory(
+            at: resolvedPersistenceRoot,
+            withIntermediateDirectories: true
+        )
+        self.persistenceRoot = resolvedPersistenceRoot
         let defaultProfile = SessionProfile.makeDefault()
         self.activeProfile = defaultProfile
         self.profiles = [defaultProfile]
@@ -287,10 +294,6 @@ public final class SessionEngine: ObservableObject {
         self.siteObserver = observer
         self.siteObservers[defaultProfile.id] = observer
         self.machine = FocusStateMachine(deps: deps)
-        // デフォルトプロファイルにディスクバックドストアを即時作成
-        if persistenceEnabled {
-            profileStores[defaultProfile.id] = JSONSessionStore(baseDir: profileDir(for: defaultProfile))
-        }
     }
 
     public func startSession() {
@@ -472,9 +475,6 @@ public final class SessionEngine: ObservableObject {
         let profile = SessionProfile(name: name, colorHue: colorHue)
         profiles.append(profile)
         siteObservers[profile.id] = SiteObserver()
-        if persistenceEnabled {
-            profileStores[profile.id] = JSONSessionStore(baseDir: profileDir(for: profile))
-        }
         saveProfiles()
         return profile
     }
@@ -557,6 +557,7 @@ public final class SessionEngine: ObservableObject {
         guard profile.id != activeProfile.id else { return }
         profiles.removeAll { $0.id == profile.id }
         siteObservers.removeValue(forKey: profile.id)
+        profileStores.removeValue(forKey: profile.id)
         saveProfiles()
     }
 
@@ -573,7 +574,7 @@ public final class SessionEngine: ObservableObject {
 
     /// アクティブプロファイルのstore
     private var activeStore: any SessionStoreProtocol {
-        profileStores[activeProfile.id] ?? deps.store
+        store(for: activeProfile)
     }
 
     /// テスト用: ファイルI/Oを無効化
@@ -648,54 +649,79 @@ public final class SessionEngine: ObservableObject {
 
     // MARK: - 永続化
 
-    private static let sitboneDir: URL = {
+    private static func defaultPersistenceRoot() -> URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".sitbone", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
-    }()
+    }
 
-    private static let profilesURL: URL = {
-        sitboneDir.appendingPathComponent("profiles.json")
-    }()
+    private var profilesURL: URL {
+        persistenceRoot.appendingPathComponent("profiles.json")
+    }
 
-    private static let cumulativeURL: URL = {
-        sitboneDir.appendingPathComponent("cumulative.json")
-    }()
+    private var legacyCumulativeURL: URL {
+        persistenceRoot.appendingPathComponent("cumulative.json")
+    }
 
-    private func profileDir(for profile: SessionProfile) -> URL {
-        let dir = Self.sitboneDir
-            .appendingPathComponent("profiles", isDirectory: true)
+    private var profilesBaseDir: URL {
+        persistenceRoot.appendingPathComponent("profiles", isDirectory: true)
+    }
+
+    private func profileDir(for profile: SessionProfile, createIfNeeded: Bool = true) -> URL {
+        if createIfNeeded {
+            try? FileManager.default.createDirectory(at: profilesBaseDir, withIntermediateDirectories: true)
+        }
+
+        let dir = profilesBaseDir
             .appendingPathComponent(profile.id.uuidString, isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if createIfNeeded {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
         return dir
+    }
+
+    private func store(for profile: SessionProfile) -> any SessionStoreProtocol {
+        if let cached = profileStores[profile.id] {
+            return cached
+        }
+        guard persistenceEnabled else { return deps.store }
+
+        let store = JSONSessionStore(baseDir: profileDir(for: profile))
+        profileStores[profile.id] = store
+        return store
     }
 
     // プロファイル一覧
 
     public func loadProfiles() {
-        guard let data = try? Data(contentsOf: Self.profilesURL),
+        guard persistenceEnabled else { return }
+        guard let data = try? Data(contentsOf: profilesURL),
               let decoded = try? JSONDecoder().decode([SessionProfile].self, from: data),
               !decoded.isEmpty else { return }
         profiles = decoded
         activeProfile = decoded[0]
-        // 各プロファイルのSiteObserver + SessionStoreを生成
+        siteObservers.removeAll()
+        profileStores.removeAll()
+        // 各プロファイルのSiteObserverを生成
         for profile in decoded {
-            let observer = SiteObserver()
-            siteObservers[profile.id] = observer
-            profileStores[profile.id] = JSONSessionStore(baseDir: profileDir(for: profile))
+            siteObservers[profile.id] = SiteObserver()
         }
         siteObserver = siteObservers[activeProfile.id] ?? SiteObserver()
+        cleanupLegacyPersistenceArtifacts()
     }
 
     public func saveProfiles() {
+        guard persistenceEnabled else { return }
         guard let data = try? JSONEncoder().encode(profiles) else { return }
-        try? data.write(to: Self.profilesURL)
+        try? data.write(to: profilesURL)
+        cleanupLegacyPersistenceArtifacts()
     }
 
     // プロファイル別分類
 
     public func loadClassifications() {
+        guard persistenceEnabled else { return }
         loadClassificationsForProfile(activeProfile)
     }
 
@@ -707,7 +733,8 @@ public final class SessionEngine: ObservableObject {
 
     /// 旧classifications.jsonをdefaultプロファイルにマイグレーション
     public func migrateClassifications() {
-        let legacyURL = Self.sitboneDir.appendingPathComponent("classifications.json")
+        guard persistenceEnabled else { return }
+        let legacyURL = persistenceRoot.appendingPathComponent("classifications.json")
         guard let data = try? Data(contentsOf: legacyURL) else { return }
         try? siteObserver.loadJSON(data)
         saveClassificationsForActiveProfile()
@@ -716,7 +743,8 @@ public final class SessionEngine: ObservableObject {
 
     /// 旧グローバルcumulative.jsonをdefaultプロファイルにマイグレーション (ADR-0012)
     public func migrateCumulativeData() {
-        let legacyURL = Self.cumulativeURL
+        guard persistenceEnabled else { return }
+        let legacyURL = legacyCumulativeURL
         guard FileManager.default.fileExists(atPath: legacyURL.path),
               let data = try? Data(contentsOf: legacyURL),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -770,6 +798,7 @@ public final class SessionEngine: ObservableObject {
 
     /// 累積データをロード
     public func loadCumulativeData() {
+        guard persistenceEnabled else { return }
         let store = activeStore
         Task {
             let record = (try? await store.loadCumulative()) ?? CumulativeRecord()
@@ -794,6 +823,34 @@ public final class SessionEngine: ObservableObject {
             let record = cachedCumulative
             let store = activeStore
             Task { try? await store.saveCumulative(record) }
+        }
+    }
+
+    private func cleanupLegacyPersistenceArtifacts() {
+        let fileManager = FileManager.default
+        let legacyClassificationsURL = persistenceRoot.appendingPathComponent("classifications.json")
+
+        try? fileManager.removeItem(at: legacyClassificationsURL)
+        try? fileManager.removeItem(at: legacyCumulativeURL)
+
+        guard let profileDirs = try? fileManager.contentsOfDirectory(
+            at: profilesBaseDir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        let validDirectoryNames = Set(profiles.map { $0.id.uuidString.lowercased() })
+        for url in profileDirs {
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
+                  values.isDirectory == true else {
+                continue
+            }
+
+            let directoryName = url.lastPathComponent.lowercased()
+            guard !validDirectoryNames.contains(directoryName) else { continue }
+            try? fileManager.removeItem(at: url)
         }
     }
 }
