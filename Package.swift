@@ -14,6 +14,7 @@ let package = Package(
         .executableTarget(
             name: "Sitbone",
             dependencies: ["SitboneUI"],
+            exclude: ["Info.plist"],
             resources: [.process("Resources")],
             swiftSettings: commonSwiftSettings
         ),
