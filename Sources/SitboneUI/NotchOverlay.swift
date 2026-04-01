@@ -72,6 +72,9 @@ public final class NotchOverlayController {
     private let engine: SessionEngine
     private var geo: NotchGeometry?
     public var onSettingsTap: (() -> Void)?
+    private var ghostTeacherCancellable: AnyCancellable?
+    private var hoverPollTimer: Timer?
+    private let hoverState = HoverState()
 
     public init(engine: SessionEngine) {
         self.engine = engine
@@ -100,45 +103,52 @@ public final class NotchOverlayController {
             interactive: false
         )
 
-        // ホバーパネル: notchと同幅、下に展開 (Claude Island風)
+        // ドロップダウンパネル: notchと同幅（onHoverなし、クリックのみinteractive）
         let notchWidth = geo.notchRight - geo.notchLeft
-        let expandHeight: CGFloat = 240  // リバー表示時に十分な高さ
+        let expandHeight: CGFloat = 350  // リバー表示時も収まる余裕
         let expandPanel = makePanel(
             frame: NSRect(
                 x: geo.notchLeft,
                 y: geo.notchBottomY - expandHeight,
                 width: notchWidth,
-                height: expandHeight + h  // notch高さ分もカバー（ホバー検出用）
+                height: expandHeight + h
             ),
             content: NotchDropdown(
                 engine: engine,
                 notchWidth: notchWidth,
                 notchHeight: h,
-                onSettingsTap: { [weak self] in
-                    self?.onSettingsTap?()
-                },
-                onHoverChanged: { [weak self] hovering in
-                    guard let self, let gp = self.ghostPanel else { return }
-                    // 同じディスプレイにいる場合のみGhost Teacherを隠す
-                    let sameScreen = gp.screen == self.leftPanel?.screen
-                    gp.alphaValue = (hovering && sameScreen) ? 0 : 1
-                }
+                hoverState: hoverState
             ),
             interactive: true
         )
-        expandPanel.ignoresMouseEvents = false
+        // 初期状態: マウスイベント透過（ホバー中のみ有効化）
+        expandPanel.ignoresMouseEvents = true
         self.expandPanel = expandPanel
 
-        // Ghost Teacherバナー: フォーカスディスプレイの上端中央に表示
+        // Ghost Teacherバナー
         setupGhostPanel()
 
         leftPanel?.orderFrontRegardless()
         rightPanel?.orderFrontRegardless()
         expandPanel.orderFrontRegardless()
         ghostPanel?.orderFrontRegardless()
+
+        // マウス位置ポーリングでホバー制御を開始
+        startHoverPolling()
+
+        // Ghost Teacherのディスプレイ追従
+        ghostTeacherCancellable = engine.$pendingGhostTeacher
+            .receive(on: RunLoop.main)
+            .sink { [weak self] site in
+                guard site != nil else { return }
+                self?.repositionGhostPanel()
+            }
     }
 
     public func hide() {
+        hoverPollTimer?.invalidate()
+        hoverPollTimer = nil
+        ghostTeacherCancellable?.cancel()
         leftPanel?.close(); rightPanel?.close(); expandPanel?.close(); ghostPanel?.close()
         leftPanel = nil; rightPanel = nil; expandPanel = nil; ghostPanel = nil
     }
@@ -172,6 +182,73 @@ public final class NotchOverlayController {
         let rect = ghostPanelFrame(screenFrame: screen.frame, safeTop: screen.safeAreaInsets.top)
         panel.setFrame(rect, display: true)
         panel.orderFrontRegardless()
+    }
+
+    // MARK: - マウス位置ベースのホバー制御
+
+    private func startHoverPolling() {
+        hoverPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pollMouseHover() }
+        }
+    }
+
+    private func pollMouseHover() {
+        guard let geo else { return }
+        let mouse = NSEvent.mouseLocation
+        let notchWidth = geo.notchRight - geo.notchLeft
+
+        // ノッチ領域（ホバー開始トリガー）
+        let notchRect = NSRect(
+            x: geo.notchLeft, y: geo.notchBottomY,
+            width: notchWidth, height: geo.notchHeight
+        )
+
+        // ドロップダウン領域（コンテンツ実測高さベース）
+        let contentH = hoverState.contentHeight
+        let dropdownRect = NSRect(
+            x: geo.notchLeft,
+            y: geo.notchBottomY - contentH,
+            width: notchWidth,
+            height: contentH
+        )
+
+        let inNotch = notchRect.contains(mouse)
+        let inDropdown = dropdownRect.contains(mouse)
+        let wasHovering = hoverState.isHovering
+
+        // Ghost Teacher同画面チェック
+        let ghostBlocks: Bool
+        if engine.pendingGhostTeacher != nil,
+           let gp = ghostPanel, let lp = leftPanel,
+           gp.screen == lp.screen {
+            ghostBlocks = true
+        } else {
+            ghostBlocks = false
+        }
+
+        if ghostBlocks {
+            // Ghost Teacherが同画面 → ホバー無効
+            if wasHovering { setHovering(false) }
+            return
+        }
+
+        if inNotch || (wasHovering && inDropdown) {
+            if !wasHovering { setHovering(true) }
+        } else {
+            if wasHovering { setHovering(false) }
+        }
+    }
+
+    private func setHovering(_ hovering: Bool) {
+        hoverState.isHovering = hovering
+        // ドロップダウンのクリック操作を有効/無効
+        expandPanel?.ignoresMouseEvents = !hovering
+
+        // Ghost Teacherの表示制御
+        if let gp = ghostPanel, let lp = leftPanel {
+            let sameScreen = gp.screen == lp.screen
+            gp.alphaValue = (hovering && sameScreen) ? 0 : 1
+        }
     }
 
     /// フォーカスウィンドウが表示されているスクリーンを取得
@@ -319,42 +396,63 @@ struct RightWing: View {
     }
 }
 
+// MARK: - PreferenceKey for content height
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+// MARK: - HoverState (コントローラ→SwiftUI間のホバー状態共有)
+
+@MainActor
+final class HoverState: ObservableObject {
+    @Published var isHovering = false
+    /// ドロップダウンコンテンツの実測高さ（GeometryReaderから更新）
+    var contentHeight: CGFloat = 0
+}
+
 // MARK: - Notch Dropdown (Claude Island風: notchから下に展開)
 
 struct NotchDropdown: View {
     @ObservedObject var engine: SessionEngine
     let notchWidth: CGFloat
     let notchHeight: CGFloat
-    var onSettingsTap: (() -> Void)?  // unused now, kept for API compat
-    var onHoverChanged: ((Bool) -> Void)?
-    @State private var isHovering = false
+    @ObservedObject var hoverState: HoverState
     @State private var showRiver = false
+
+    private var isHovering: Bool { hoverState.isHovering }
 
     var body: some View {
         VStack(spacing: 0) {
-            // 上部: notch領域（透明、ホバー検出用）
+            // 上部: notch領域（透明スペーサー）
             Color.clear
                 .frame(height: notchHeight)
 
-            // 下部: ドロップダウン（背景が上に伸びているので角は常に隠れる）
+            // 下部: ドロップダウン
             if engine.isSessionActive {
                 dropdownContent
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ContentHeightKey.self,
+                            value: geo.size.height
+                        )
+                    })
+                    .onPreferenceChange(ContentHeightKey.self) { h in
+                        hoverState.contentHeight = h
+                    }
                     .offset(y: isHovering ? 0 : -120)
                     .opacity(isHovering ? 1 : 0)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isHovering)
             }
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                isHovering = hovering
-                if !hovering {
-                    showRiver = false
-                }
-            }
-            onHoverChanged?(hovering)
+        .onChange(of: isHovering) { _, hovering in
+            if !hovering { showRiver = false }
         }
     }
 
