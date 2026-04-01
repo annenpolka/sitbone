@@ -107,6 +107,65 @@ struct SessionEngineExtendedTests {
         #expect(engine.currentSite != nil)
     }
 
+    @Test("ブラウザURLが取れればホスト名を同一サイトキーに使う")
+    @MainActor
+    func performTickWithBrowserURLUsesHostKey() async {
+        let clock = FixedClock()
+        let windowMonitor = MockWindowMonitor(appName: "Google Chrome")
+        windowMonitor.windowTitle = "Pull requests · annenpolka/sitbone · GitHub"
+        windowMonitor.urlString = "https://github.com/annenpolka/sitbone/pulls"
+        let deps = Dependencies(
+            clock: clock,
+            windowMonitor: windowMonitor,
+            idleDetector: MockIdleDetector(idle: 0),
+            presenceDetector: MockPresenceDetector(status: .absent),
+            store: InMemorySessionStore()
+        )
+        let engine = SessionEngine(deps: deps)
+        engine.persistenceEnabled = false
+        engine.startSession()
+
+        clock.advance(by: 1)
+        await engine.performTickForTest()
+
+        #expect(engine.currentSite == "github.com")
+        #expect(engine.pendingGhostTeacher == "github.com")
+
+        windowMonitor.windowTitle = "Notifications"
+        windowMonitor.urlString = "https://github.com/notifications"
+        clock.advance(by: 1)
+        await engine.performTickForTest()
+
+        #expect(engine.currentSite == "github.com")
+        #expect(engine.pendingGhostTeacher == "github.com")
+    }
+
+    @Test("既存の手動分類があればタイトル側のサイト名を優先する")
+    @MainActor
+    func performTickPrefersExistingTitleClassification() async {
+        let clock = FixedClock()
+        let windowMonitor = MockWindowMonitor(appName: "Google Chrome")
+        windowMonitor.windowTitle = "GitHub - annenpolka/sitbone - Google Chrome"
+        windowMonitor.urlString = "https://github.com/annenpolka/sitbone"
+        let deps = Dependencies(
+            clock: clock,
+            windowMonitor: windowMonitor,
+            idleDetector: MockIdleDetector(idle: 0),
+            presenceDetector: MockPresenceDetector(status: .absent),
+            store: InMemorySessionStore()
+        )
+        let engine = SessionEngine(deps: deps)
+        engine.persistenceEnabled = false
+        engine.classifySite("GitHub", as: .flow)
+        engine.startSession()
+
+        clock.advance(by: 1)
+        await engine.performTickForTest()
+
+        #expect(engine.currentSite == "GitHub")
+        #expect(engine.pendingGhostTeacher == nil)
+    }
+
     @Test("非ブラウザアプリではcurrentSiteがnil")
     @MainActor
     func performTickWithNonBrowser() async {

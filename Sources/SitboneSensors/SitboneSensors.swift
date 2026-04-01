@@ -30,6 +30,7 @@ public protocol ClockProtocol: Sendable {
 public protocol WindowMonitorProtocol: Sendable {
     func frontmostAppName() -> String?
     func frontmostWindowTitle() -> String?
+    func frontmostWindowURL() -> String?
 }
 
 public protocol IdleDetectorProtocol: Sendable {
@@ -82,6 +83,11 @@ public struct CGEventSourceIdleDetector: IdleDetectorProtocol, Sendable {
 import AppKit
 
 public struct NSWorkspaceWindowMonitor: WindowMonitorProtocol, Sendable {
+    private let chromeScriptableBrowsers: Set<String> = [
+        "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge",
+        "Opera", "Vivaldi", "Chromium",
+    ]
+
     public init() {}
 
     public func frontmostAppName() -> String? {
@@ -98,6 +104,44 @@ public struct NSWorkspaceWindowMonitor: WindowMonitorProtocol, Sendable {
         AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title)
         return title as? String
     }
+
+    public func frontmostWindowURL() -> String? {
+        guard let appName = frontmostAppName() else { return nil }
+
+        switch appName {
+        case "Safari":
+            return runAppleScript("""
+                tell application "Safari"
+                    if not (exists front document) then return ""
+                    return URL of front document
+                end tell
+                """
+            )
+
+        case let name where chromeScriptableBrowsers.contains(name):
+            return runAppleScript("""
+                tell application "\(name)"
+                    if not (exists front window) then return ""
+                    return URL of active tab of front window
+                end tell
+                """
+            )
+
+        default:
+            return nil
+        }
+    }
+
+    private func runAppleScript(_ source: String) -> String? {
+        guard let script = NSAppleScript(source: source) else { return nil }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        if error != nil { return nil }
+
+        let value = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
 }
 #endif
 
@@ -111,9 +155,11 @@ public final class MockWindowMonitor: WindowMonitorProtocol, @unchecked Sendable
     }
 
     public var windowTitle: String?
+    public var urlString: String?
 
     public func frontmostAppName() -> String? { appName }
     public func frontmostWindowTitle() -> String? { windowTitle }
+    public func frontmostWindowURL() -> String? { urlString }
 }
 
 public final class MockIdleDetector: IdleDetectorProtocol, @unchecked Sendable {

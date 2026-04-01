@@ -159,6 +159,38 @@ final class SiteResolutionTests: XCTestCase {
         XCTAssertEqual(result.site, "docs.rs")
     }
 
+    // MARK: - BrowserSiteIdentity
+
+    func testCanonicalSiteKeyUsesRegistrableDomain() {
+        XCTAssertEqual(
+            BrowserSiteIdentity.canonicalSiteKey(
+                urlString: "https://gist.github.com/annenpolka/sitbone"
+            ),
+            "github.com"
+        )
+        XCTAssertEqual(
+            BrowserSiteIdentity.canonicalSiteKey(
+                urlString: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            ),
+            "youtube.com"
+        )
+        XCTAssertEqual(
+            BrowserSiteIdentity.canonicalSiteKey(
+                urlString: "https://docs.rs/rand/latest/rand/"
+            ),
+            "docs.rs"
+        )
+    }
+
+    func testCanonicalSiteKeyHandlesCountryCodeDomains() {
+        XCTAssertEqual(
+            BrowserSiteIdentity.canonicalSiteKey(
+                urlString: "https://support.google.co.jp/mail"
+            ),
+            "google.co.jp"
+        )
+    }
+
     // MARK: - ジャンク除外
 
     func testResolveNewTab() {
