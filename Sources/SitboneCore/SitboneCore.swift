@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 // SitboneCore — 状態マシン + セッション管理
 
 public import Foundation
@@ -22,7 +23,7 @@ public enum FocusState: Sendable, Equatable {
 
     public var since: Date {
         switch self {
-        case .flow(let d), .drift(let d), .away(let d): d
+        case .flow(let date), .drift(let date), .away(let date): date
         }
     }
 }
@@ -78,13 +79,17 @@ public struct Dependencies: Sendable {
 // MARK: - Thresholds
 
 public struct Thresholds: Sendable {
-    public let t1: TimeInterval  // FLOW→DRIFT (15s)
-    public let t2: TimeInterval  // DRIFT→AWAY (90s)
+    public let driftDelay: TimeInterval  // FLOW→DRIFT (15s)
+    public let awayDelay: TimeInterval  // DRIFT→AWAY (90s)
     public let flowRecovery: TimeInterval  // FLOW復帰に必要なactivity (5s)
 
-    public init(t1: TimeInterval = 15, t2: TimeInterval = 90, flowRecovery: TimeInterval = 5) {
-        self.t1 = t1
-        self.t2 = t2
+    public init(
+        driftDelay: TimeInterval = 15,
+        awayDelay: TimeInterval = 90,
+        flowRecovery: TimeInterval = 5
+    ) {
+        self.driftDelay = driftDelay
+        self.awayDelay = awayDelay
         self.flowRecovery = flowRecovery
     }
 }
@@ -100,6 +105,12 @@ public struct Counters: Sendable, Equatable {
 }
 
 // MARK: - FocusStateMachine
+
+private struct TickSnapshot {
+    let now: Date
+    let idle: TimeInterval
+    let presence: PresenceReading
+}
 
 public final class FocusStateMachine: Sendable {
     private let deps: Dependencies
@@ -117,66 +128,119 @@ public final class FocusStateMachine: Sendable {
         counters: Counters,
         siteIsDrift: Bool = false
     ) async -> (state: FocusState, counters: Counters) {
-        let now = deps.clock.now
-        let idle = deps.idleDetector.secondsSinceLastEvent()
-        let presence = await deps.presenceDetector.detect()
-        var counters = counters
+        let snapshot = TickSnapshot(
+            now: deps.clock.now,
+            idle: deps.idleDetector.secondsSinceLastEvent(),
+            presence: await deps.presenceDetector.detect()
+        )
 
         switch current {
         case .flow:
-            // DRIFTサイトにいる → idle関係なく即DRIFT
-            if siteIsDrift {
-                return (.drift(since: now), counters)
-            }
-            if idle < thresholds.t1 {
-                return (current, counters)
-            }
-            if idle < thresholds.t2 {
-                if presence.status == .present {
-                    return (current, counters)
-                }
-                return (.drift(since: now), counters)
-            }
-            if presence.status == .present {
-                return (.drift(since: now), counters)
-            }
-            counters.deserted.increment()
-            return (.away(since: now), counters)
+            return tickFlow(
+                current: current,
+                counters: counters,
+                snapshot: snapshot,
+                siteIsDrift: siteIsDrift
+            )
 
         case .drift:
-            // DRIFTサイトにいる間はDRIFTを維持（復帰させない）
-            if siteIsDrift {
-                let driftDuration = now.timeIntervalSince(current.since)
-                if driftDuration > thresholds.t2, presence.status != .present {
-                    counters.deserted.increment()
-                    return (.away(since: now), counters)
-                }
-                return (current, counters)
-            }
-            if idle < thresholds.flowRecovery {
-                counters.driftRecovered.increment()
-                return (.flow(since: now), counters)
-            }
-            let driftDuration = now.timeIntervalSince(current.since)
-            if driftDuration > thresholds.t2, presence.status != .present {
-                counters.deserted.increment()
-                return (.away(since: now), counters)
-            }
-            return (current, counters)
+            return tickDrift(
+                current: current,
+                counters: counters,
+                snapshot: snapshot,
+                siteIsDrift: siteIsDrift
+            )
 
         case .away:
-            if idle < thresholds.flowRecovery {
-                counters.awayRecovered.increment()
-                return (.flow(since: now), counters)
-            }
-            return (current, counters)
+            return tickAway(current: current, counters: counters, snapshot: snapshot)
         }
+    }
+
+    private func tickFlow(
+        current: FocusState,
+        counters: Counters,
+        snapshot: TickSnapshot,
+        siteIsDrift: Bool
+    ) -> (state: FocusState, counters: Counters) {
+        var updatedCounters = counters
+
+        if siteIsDrift {
+            return (.drift(since: snapshot.now), updatedCounters)
+        }
+        if snapshot.idle < thresholds.driftDelay {
+            return (current, updatedCounters)
+        }
+        if snapshot.idle < thresholds.awayDelay {
+            if snapshot.presence.status == .present {
+                return (current, updatedCounters)
+            }
+            return (.drift(since: snapshot.now), updatedCounters)
+        }
+        if snapshot.presence.status == .present {
+            return (.drift(since: snapshot.now), updatedCounters)
+        }
+        updatedCounters.deserted.increment()
+        return (.away(since: snapshot.now), updatedCounters)
+    }
+
+    private func tickDrift(
+        current: FocusState,
+        counters: Counters,
+        snapshot: TickSnapshot,
+        siteIsDrift: Bool
+    ) -> (state: FocusState, counters: Counters) {
+        var updatedCounters = counters
+
+        if siteIsDrift {
+            return driftOrAwayState(
+                current: current,
+                counters: updatedCounters,
+                snapshot: snapshot
+            )
+        }
+        if snapshot.idle < thresholds.flowRecovery {
+            updatedCounters.driftRecovered.increment()
+            return (.flow(since: snapshot.now), updatedCounters)
+        }
+        return driftOrAwayState(
+            current: current,
+            counters: updatedCounters,
+            snapshot: snapshot
+        )
+    }
+
+    private func tickAway(
+        current: FocusState,
+        counters: Counters,
+        snapshot: TickSnapshot
+    ) -> (state: FocusState, counters: Counters) {
+        var updatedCounters = counters
+        if snapshot.idle < thresholds.flowRecovery {
+            updatedCounters.awayRecovered.increment()
+            return (.flow(since: snapshot.now), updatedCounters)
+        }
+        return (current, updatedCounters)
+    }
+
+    private func driftOrAwayState(
+        current: FocusState,
+        counters: Counters,
+        snapshot: TickSnapshot
+    ) -> (state: FocusState, counters: Counters) {
+        var updatedCounters = counters
+        let driftDuration = snapshot.now.timeIntervalSince(current.since)
+        if driftDuration > thresholds.awayDelay, snapshot.presence.status != .present {
+            updatedCounters.deserted.increment()
+            return (.away(since: snapshot.now), updatedCounters)
+        }
+        return (current, updatedCounters)
     }
 }
 
 // MARK: - SessionEngine (セッション全体を管理、UI層とのブリッジ)
 
 @MainActor
+// swiftlint:disable type_body_length
 public final class SessionEngine: ObservableObject {
     @Published public private(set) var focusState: FocusState?
     @Published public private(set) var counters = Counters()
@@ -286,95 +350,115 @@ public final class SessionEngine: ObservableObject {
         guard let state = focusState else { return }
         let now = deps.clock.now
         let oldPhase = state.phase
-
-        let delta: TimeInterval
-        if let last = lastTickTime {
-            delta = now.timeIntervalSince(last)
-            totalElapsed += delta
-            if oldPhase == .flow {
-                focusedElapsed += delta
-            }
-        } else {
-            delta = 0
-        }
-
-        // Timeline tracking (ADR-0012)
-        if currentTimelinePhase == oldPhase {
-            currentPhaseDuration += delta
-        } else {
-            if let prevPhase = currentTimelinePhase, currentPhaseDuration > 0 {
-                timelineBlocks.append(TimelineBlock(state: prevPhase, duration: currentPhaseDuration))
-            }
-            currentTimelinePhase = oldPhase
-            currentPhaseDuration = delta
-        }
-
+        let delta = advanceElapsed(phase: oldPhase, now: now)
+        updateTimeline(phase: oldPhase, delta: delta)
         lastTickTime = now
 
-        // 現在のサイト/アプリがDRIFT分類かチェック
-        let isDriftSite: Bool = {
-            if let site = currentSite {
-                return siteObserver.effectiveClassification(for: site) == .drift
-            }
-            if !currentApp.isEmpty {
-                return siteObserver.effectiveClassification(for: currentApp) == .drift
-            }
-            return false
-        }()
-
         let (newState, newCounters) = await machine.tick(
-            current: state, counters: counters, siteIsDrift: isDriftSite
+            current: state,
+            counters: counters,
+            siteIsDrift: isCurrentTargetDriftSite()
         )
         let newPhase = newState.phase
         focusState = newState
         counters = newCounters
 
-        // Ghost Teacher + SiteResolver (ADR-0009, ADR-0010)
-        let prevApp = currentApp
+        refreshWindowContext(for: newPhase)
+        triggerDriftCallbackIfNeeded(from: oldPhase, to: newPhase)
+    }
+
+    private func advanceElapsed(phase: FocusPhase, now: Date) -> TimeInterval {
+        guard let lastTickTime else { return 0 }
+        let delta = now.timeIntervalSince(lastTickTime)
+        totalElapsed += delta
+        if phase == .flow {
+            focusedElapsed += delta
+        }
+        return delta
+    }
+
+    private func updateTimeline(phase: FocusPhase, delta: TimeInterval) {
+        if currentTimelinePhase == phase {
+            currentPhaseDuration += delta
+            return
+        }
+        if let previousPhase = currentTimelinePhase, currentPhaseDuration > 0 {
+            timelineBlocks.append(
+                TimelineBlock(state: previousPhase, duration: currentPhaseDuration)
+            )
+        }
+        currentTimelinePhase = phase
+        currentPhaseDuration = delta
+    }
+
+    private func isCurrentTargetDriftSite() -> Bool {
+        if let site = currentSite {
+            return siteObserver.effectiveClassification(for: site) == .drift
+        }
+        if !currentApp.isEmpty {
+            return siteObserver.effectiveClassification(for: currentApp) == .drift
+        }
+        return false
+    }
+
+    private func refreshWindowContext(for phase: FocusPhase) {
+        let previousApp = currentApp
         currentApp = deps.windowMonitor.frontmostAppName() ?? ""
         currentWindowTitle = deps.windowMonitor.frontmostWindowTitle() ?? ""
 
         if WindowTitleParser.isBrowser(currentApp) {
-            // ブラウザ: SiteResolverでサイト名を安定抽出
-            let resolution = SiteResolver.resolve(
-                title: currentWindowTitle, app: currentApp, observer: siteObserver
-            )
-            let browserSiteKey = BrowserSiteIdentity.canonicalSiteKey(
-                urlString: deps.windowMonitor.frontmostWindowURL()
-            )
-            let site = preferredBrowserSiteKey(
-                browserSiteKey: browserSiteKey,
-                titleResolvedSite: resolution.site
-            )
-            if currentSite != site {
-                currentSite = site
-                if let site {
-                    // 再訪: dismissedから外す
-                    dismissedSites.remove(site)
-                    if siteObserver.isUnclassified(site) && !dismissedSites.contains(site) {
-                        pendingGhostTeacher = site
-                    }
-                }
-            }
-            if let site {
-                siteObserver.record(site: site, phase: newPhase, duration: 1)
-            }
-            // ブラウザアプリ自体のGhost Teacherは抑制
-        } else {
-            currentSite = nil
-            // 非ブラウザアプリ: アプリ単位でGhost Teacher
-            if currentApp != prevApp && !currentApp.isEmpty {
-                dismissedSites.remove(currentApp)
-                if siteObserver.isUnclassified(currentApp) && !dismissedSites.contains(currentApp) {
-                    pendingGhostTeacher = currentApp
-                }
-            }
-            if !currentApp.isEmpty {
-                siteObserver.record(site: currentApp, phase: newPhase, duration: 1)
-            }
+            updateBrowserContext(for: phase)
+            return
         }
 
-        // FLOW→DRIFT遷移を検出してコールバック (ADR-0007)
+        updateAppContext(previousApp: previousApp, phase: phase)
+    }
+
+    private func updateBrowserContext(for phase: FocusPhase) {
+        let resolution = SiteResolver.resolve(
+            title: currentWindowTitle,
+            app: currentApp,
+            observer: siteObserver
+        )
+        let browserSiteKey = BrowserSiteIdentity.canonicalSiteKey(
+            urlString: deps.windowMonitor.frontmostWindowURL()
+        )
+        let site = preferredBrowserSiteKey(
+            browserSiteKey: browserSiteKey,
+            titleResolvedSite: resolution.site
+        )
+
+        updateCurrentSite(site)
+        if let site {
+            siteObserver.record(site: site, phase: phase, duration: 1)
+        }
+    }
+
+    private func updateAppContext(previousApp: String, phase: FocusPhase) {
+        currentSite = nil
+        if currentApp != previousApp && !currentApp.isEmpty {
+            dismissedSites.remove(currentApp)
+            if siteObserver.isUnclassified(currentApp) && !dismissedSites.contains(currentApp) {
+                pendingGhostTeacher = currentApp
+            }
+        }
+        if !currentApp.isEmpty {
+            siteObserver.record(site: currentApp, phase: phase, duration: 1)
+        }
+    }
+
+    private func updateCurrentSite(_ site: String?) {
+        guard currentSite != site else { return }
+        currentSite = site
+        guard let site else { return }
+
+        dismissedSites.remove(site)
+        if siteObserver.isUnclassified(site) && !dismissedSites.contains(site) {
+            pendingGhostTeacher = site
+        }
+    }
+
+    private func triggerDriftCallbackIfNeeded(from oldPhase: FocusPhase, to newPhase: FocusPhase) {
         if oldPhase == .flow && newPhase == .drift {
             onDriftEntered?()
         }
@@ -713,3 +797,4 @@ public final class SessionEngine: ObservableObject {
         }
     }
 }
+// swiftlint:enable type_body_length

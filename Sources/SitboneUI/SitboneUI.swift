@@ -254,8 +254,8 @@ public struct MenuBarView: View {
             // 新規作成
             Button {
                 let name = "profile \(engine.profiles.count)"
-                let p = engine.createProfile(name: name)
-                editingProfileId = p.id
+                let profile = engine.createProfile(name: name)
+                editingProfileId = profile.id
                 editName = name
             } label: {
                 HStack(spacing: 4) {
@@ -297,13 +297,13 @@ public struct MenuBarView: View {
 // MARK: - Time formatting
 
 func formatTime(_ interval: TimeInterval) -> String {
-    let h = Int(interval) / 3600
-    let m = (Int(interval) % 3600) / 60
-    let s = Int(interval) % 60
-    if h > 0 {
-        return String(format: "%d:%02d:%02d", h, m, s)
+    let hours = Int(interval) / 3600
+    let minutes = (Int(interval) % 3600) / 60
+    let seconds = Int(interval) % 60
+    if hours > 0 {
+        return String(format: "%d:%02d:%02d", hours, minutes, seconds)
     }
-    return String(format: "%d:%02d", m, s)
+    return String(format: "%d:%02d", minutes, seconds)
 }
 
 func formatCumulativeHours(_ hours: Double) -> String {

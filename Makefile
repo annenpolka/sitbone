@@ -1,9 +1,16 @@
+SHELL        = /bin/bash
+.SHELLFLAGS  = -eo pipefail -c
+
 SCHEME       = Sitbone
 DESTINATION  = platform=macOS
 LOG_DIR      = .build/logs
 
 $(LOG_DIR):
 	@mkdir -p $(LOG_DIR)
+
+install-hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-commit .githooks/pre-push
 
 # Phase 1: コンパイラ検証
 compile: | $(LOG_DIR)

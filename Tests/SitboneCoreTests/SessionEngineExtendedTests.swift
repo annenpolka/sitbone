@@ -35,9 +35,9 @@ struct SessionEngineExtendedTests {
     @MainActor
     func renameNonActiveProfile() {
         let engine = makeEngine()
-        let p = engine.createProfile(name: "temp")
-        engine.renameProfile(p, to: "writing")
-        let found = engine.profiles.first { $0.id == p.id }
+        let profile = engine.createProfile(name: "temp")
+        engine.renameProfile(profile, to: "writing")
+        let found = engine.profiles.first { $0.id == profile.id }
         #expect(found?.name == "writing")
     }
 

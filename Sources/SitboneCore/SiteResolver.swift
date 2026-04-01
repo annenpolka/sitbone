@@ -50,51 +50,56 @@ public enum SegmentScorer {
     private static let junk: Set<String> = [
         "new tab", "start page", "home", "untitled", "about:blank",
         "新しいタブ", "ホーム", "スタートページ",
-        "メモリを大量に使用",
+        "メモリを大量に使用"
     ]
 
     /// サイズ表記パターン（"1.5 GB", "500 MB"等）
-    private static let sizePattern = try! NSRegularExpression(
-        pattern: #"^\d+(\.\d+)?\s*(GB|MB|KB|TB|B)$"#,
-        options: .caseInsensitive
-    )
+    private static let sizePattern: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"^\d+(\.\d+)?\s*(GB|MB|KB|TB|B)$"#,
+            options: .caseInsensitive
+        ) else {
+            fatalError("SegmentScorer.sizePattern must be a valid regular expression")
+        }
+        return regex
+    }()
 
     /// セグメントのサイト名らしさをスコアリング
     public static func score(_ segment: String, isFirst: Bool, isLast: Bool) -> Double {
         let lower = segment.lowercased()
-        var s: Double = 0
+        var score: Double = 0
 
         // ジャンク除外
         if junk.contains(lower) { return -100 }
 
         // ドメイン風（docs.rs, github.com等）: +3
         if segment.contains(".") && segment.count < 30 && !segment.contains(" ") {
-            s += 3
+            score += 3
         }
 
         // パス風（/を含む）: -3
-        if segment.contains("/") { s -= 3 }
+        if segment.contains("/") { score -= 3 }
         // ハッシュ/アンカー: -1
-        if segment.contains("#") { s -= 1 }
+        if segment.contains("#") { score -= 1 }
 
         // 単語数でスコアリング
         let words = segment.split(separator: " ")
         if words.count <= 3 {
             // 短いブランド名: +2
-            s += 2
+            score += 2
         } else {
             // 長い文章風: -1
-            s -= 1
+            score -= 1
         }
 
         // 文字数が短い: +1
-        if segment.count <= 20 { s += 1 }
+        if segment.count <= 20 { score += 1 }
 
         // 先頭/末尾ボーナス
-        if isFirst { s += 0.5 }
-        if isLast { s += 1.0 }  // 末尾の方が有力（YouTube, Stack Overflow型）
+        if isFirst { score += 0.5 }
+        if isLast { score += 1.0 }  // 末尾の方が有力（YouTube, Stack Overflow型）
 
-        return s
+        return score
     }
 
     /// ジャンクかどうか
@@ -137,10 +142,10 @@ public enum SiteResolver {
         }
 
         // 5. 未知サイト: スコアリングで候補を提案
-        let scored = nonJunk.enumerated().map { (i, seg) -> (String, Double) in
-            let isFirst = (i == 0)
-            let isLast = (i == nonJunk.count - 1)
-            return (seg, SegmentScorer.score(seg, isFirst: isFirst, isLast: isLast))
+        let scored = nonJunk.enumerated().map { (index, segment) -> (String, Double) in
+            let isFirst = (index == 0)
+            let isLast = (index == nonJunk.count - 1)
+            return (segment, SegmentScorer.score(segment, isFirst: isFirst, isLast: isLast))
         }
         .sorted { $0.1 > $1.1 }
 

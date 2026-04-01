@@ -8,7 +8,7 @@ public enum WindowTitleParser {
     private static let browsers: Set<String> = [
         "Google Chrome", "Firefox", "Safari", "Arc",
         "Brave Browser", "Microsoft Edge", "Opera", "Vivaldi",
-        "Chromium", "Orion",
+        "Chromium", "Orion"
     ]
 
     /// アプリ名がブラウザかどうか

@@ -8,23 +8,23 @@ public final class JSONSessionStore: SessionStoreProtocol, @unchecked Sendable {
     private let cumulativeURL: URL
 
     private let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
-        e.outputFormatting = .prettyPrinted
-        return e
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .prettyPrinted
+        return encoder
     }()
 
     private let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }()
 
     private let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = .current
-        return f
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = .current
+        return formatter
     }()
 
     public init(baseDir: URL) {

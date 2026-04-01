@@ -28,6 +28,12 @@ public struct SiteEntry: Sendable {
     }
 }
 
+public struct ObservedSiteSuggestion: Sendable {
+    public let site: String
+    public let suggestion: SiteSuggestion
+    public let entry: SiteEntry
+}
+
 // MARK: - SiteObserver
 
 public final class SiteObserver: @unchecked Sendable {
@@ -109,10 +115,8 @@ public final class SiteObserver: @unchecked Sendable {
 
         // Pass 1: 完全一致
         for site in sorted {
-            for segment in segments {
-                if segment.caseInsensitiveCompare(site) == .orderedSame {
-                    return site
-                }
+            for segment in segments where segment.caseInsensitiveCompare(site) == .orderedSame {
+                return site
             }
         }
 
@@ -121,10 +125,8 @@ public final class SiteObserver: @unchecked Sendable {
             for segment in segments {
                 let subsegments = segment.components(separatedBy: "/")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
-                for sub in subsegments {
-                    if sub.caseInsensitiveCompare(site) == .orderedSame {
-                        return site
-                    }
+                for subsegment in subsegments where subsegment.caseInsensitiveCompare(site) == .orderedSame {
+                    return site
                 }
             }
         }
@@ -134,8 +136,14 @@ public final class SiteObserver: @unchecked Sendable {
 
     // MARK: - 一覧
 
-    public func allSuggestions() -> [(site: String, suggestion: SiteSuggestion, entry: SiteEntry)] {
-        entries.map { (site: $0.key, suggestion: effectiveClassification(for: $0.key), entry: $0.value) }
+    public func allSuggestions() -> [ObservedSiteSuggestion] {
+        entries.map {
+            ObservedSiteSuggestion(
+                site: $0.key,
+                suggestion: effectiveClassification(for: $0.key),
+                entry: $0.value
+            )
+        }
             .sorted { $0.entry.totalTime > $1.entry.totalTime }
     }
 

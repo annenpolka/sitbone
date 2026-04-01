@@ -10,24 +10,24 @@ final class SessionProfileTests: XCTestCase {
     func testCreateProfile() {
         let profile = SessionProfile(name: "coding")
         XCTAssertEqual(profile.name, "coding")
-        XCTAssertEqual(profile.thresholds.t1, 15)  // デフォルト値
-        XCTAssertEqual(profile.thresholds.t2, 90)
+        XCTAssertEqual(profile.thresholds.driftDelay, 15)  // デフォルト値
+        XCTAssertEqual(profile.thresholds.awayDelay, 90)
     }
 
     func testProfileHasUniqueID() {
-        let p1 = SessionProfile(name: "coding")
-        let p2 = SessionProfile(name: "writing")
-        XCTAssertNotEqual(p1.id, p2.id)
+        let codingProfile = SessionProfile(name: "coding")
+        let writingProfile = SessionProfile(name: "writing")
+        XCTAssertNotEqual(codingProfile.id, writingProfile.id)
     }
 
     func testProfileHasColor() {
-        let p = SessionProfile(name: "coding", colorHue: 0.5)
-        XCTAssertEqual(p.colorHue, 0.5)
+        let profile = SessionProfile(name: "coding", colorHue: 0.5)
+        XCTAssertEqual(profile.colorHue, 0.5)
     }
 
     func testDefaultProfile() {
-        let p = SessionProfile.makeDefault()
-        XCTAssertEqual(p.name, "default")
+        let profile = SessionProfile.makeDefault()
+        XCTAssertEqual(profile.name, "default")
     }
 
     // MARK: - プロファイルのJSON永続化
@@ -44,7 +44,7 @@ final class SessionProfileTests: XCTestCase {
     func testProfileListCodable() throws {
         let profiles = [
             SessionProfile(name: "coding", colorHue: 0.3),
-            SessionProfile(name: "writing", colorHue: 0.7),
+            SessionProfile(name: "writing", colorHue: 0.7)
         ]
         let data = try JSONEncoder().encode(profiles)
         let decoded = try JSONDecoder().decode([SessionProfile].self, from: data)

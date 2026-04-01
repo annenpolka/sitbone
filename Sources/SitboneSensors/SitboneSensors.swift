@@ -85,7 +85,7 @@ import AppKit
 public struct NSWorkspaceWindowMonitor: WindowMonitorProtocol, Sendable {
     private let chromeScriptableBrowsers: Set<String> = [
         "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge",
-        "Opera", "Vivaldi", "Chromium",
+        "Opera", "Vivaldi", "Chromium"
     ]
 
     public init() {}
@@ -97,12 +97,10 @@ public struct NSWorkspaceWindowMonitor: WindowMonitorProtocol, Sendable {
     public func frontmostWindowTitle() -> String? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        var value: AnyObject?
-        let err = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &value)
-        guard err == .success, let window = value else { return nil }
-        var title: AnyObject?
-        AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title)
-        return title as? String
+        guard let focusedWindow = copyFocusedWindow(from: axApp) else { return nil }
+        var titleValue: CFTypeRef?
+        AXUIElementCopyAttributeValue(focusedWindow, kAXTitleAttribute as CFString, &titleValue)
+        return titleValue as? String
     }
 
     public func frontmostWindowURL() -> String? {
@@ -141,6 +139,22 @@ public struct NSWorkspaceWindowMonitor: WindowMonitorProtocol, Sendable {
         let value = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value, !value.isEmpty else { return nil }
         return value
+    }
+
+    private func copyFocusedWindow(from application: AXUIElement) -> AXUIElement? {
+        var focusedWindowValue: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(
+            application,
+            kAXFocusedWindowAttribute as CFString,
+            &focusedWindowValue
+        )
+        guard error == .success, let focusedWindowValue else {
+            return nil
+        }
+        guard CFGetTypeID(focusedWindowValue) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return unsafeDowncast(focusedWindowValue, to: AXUIElement.self)
     }
 }
 #endif
