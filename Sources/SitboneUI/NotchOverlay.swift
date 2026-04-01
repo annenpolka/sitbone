@@ -116,6 +116,12 @@ public final class NotchOverlayController {
                 notchHeight: h,
                 onSettingsTap: { [weak self] in
                     self?.onSettingsTap?()
+                },
+                onHoverChanged: { [weak self] hovering in
+                    guard let self, let gp = self.ghostPanel else { return }
+                    // 同じディスプレイにいる場合のみGhost Teacherを隠す
+                    let sameScreen = gp.screen == self.leftPanel?.screen
+                    gp.alphaValue = (hovering && sameScreen) ? 0 : 1
                 }
             ),
             interactive: true
@@ -346,6 +352,7 @@ struct NotchDropdown: View {
     let notchWidth: CGFloat
     let notchHeight: CGFloat
     var onSettingsTap: (() -> Void)?  // unused now, kept for API compat
+    var onHoverChanged: ((Bool) -> Void)?
     @State private var isHovering = false
     @State private var showRiver = false
 
@@ -367,19 +374,13 @@ struct NotchDropdown: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .onHover { hovering in
-            // Ghost Teacher表示中はドロップダウンのホバーを無視
-            guard engine.pendingGhostTeacher == nil else {
-                if isHovering {
-                    withAnimation { isHovering = false; showRiver = false }
-                }
-                return
-            }
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 isHovering = hovering
                 if !hovering {
                     showRiver = false
                 }
             }
+            onHoverChanged?(hovering)
         }
     }
 

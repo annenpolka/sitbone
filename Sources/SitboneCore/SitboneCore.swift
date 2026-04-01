@@ -338,8 +338,12 @@ public final class SessionEngine: ObservableObject {
             let site = resolution.site
             if currentSite != site {
                 currentSite = site
-                if let site, siteObserver.isNewSite(site) {
-                    pendingGhostTeacher = site
+                if let site {
+                    // 再訪: dismissedから外す
+                    dismissedSites.remove(site)
+                    if siteObserver.isUnclassified(site) && !dismissedSites.contains(site) {
+                        pendingGhostTeacher = site
+                    }
                 }
             }
             if let site {
@@ -350,7 +354,8 @@ public final class SessionEngine: ObservableObject {
             currentSite = nil
             // 非ブラウザアプリ: アプリ単位でGhost Teacher
             if currentApp != prevApp && !currentApp.isEmpty {
-                if siteObserver.isNewSite(currentApp) {
+                dismissedSites.remove(currentApp)
+                if siteObserver.isUnclassified(currentApp) && !dismissedSites.contains(currentApp) {
                     pendingGhostTeacher = currentApp
                 }
             }
@@ -476,8 +481,14 @@ public final class SessionEngine: ObservableObject {
     /// テスト用: ファイルI/Oを無効化
     public var persistenceEnabled: Bool = true
 
-    /// Ghost Teacherを無視
+    /// 今回のセッションでdismissしたサイト（次の遷移で再表示）
+    private var dismissedSites: Set<String> = []
+
+    /// Ghost Teacherを保留（次にこのサイトに戻ったら再表示）
     public func dismissGhostTeacher() {
+        if let site = pendingGhostTeacher {
+            dismissedSites.insert(site)
+        }
         pendingGhostTeacher = nil
     }
 

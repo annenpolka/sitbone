@@ -72,6 +72,11 @@ public final class SiteObserver: @unchecked Sendable {
         entries[site] == nil && userClassifications[site] == nil
     }
 
+    /// ユーザーが未分類のサイトかどうか（観測はあるが分類がない）
+    public func isUnclassified(_ site: String) -> Bool {
+        userClassifications[site] == nil
+    }
+
     /// ユーザーがサイトを明示的に分類（Ghost Teacherの回答）
     public func classify(site: String, as classification: SiteSuggestion) {
         userClassifications[site] = classification
