@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ApplicationServices
 import SitboneCore
 import SitboneUI
 import SitboneData
@@ -39,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // アクセシビリティ権限をリクエスト (ウィンドウタイトル取得に必要)
+        requestAccessibilityPermission()
+
         Task { @MainActor in
             // 永続データをロード
             engine.loadProfiles()
@@ -64,5 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 engine.startSession()
             }
         }
+    }
+
+    private func requestAccessibilityPermission() {
+        let key = "AXTrustedCheckOptionPrompt" as CFString
+        let options = [key: true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
     }
 }
