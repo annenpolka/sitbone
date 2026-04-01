@@ -339,7 +339,13 @@ public final class SessionEngine: ObservableObject {
             let resolution = SiteResolver.resolve(
                 title: currentWindowTitle, app: currentApp, observer: siteObserver
             )
-            let site = resolution.site
+            let browserSiteKey = BrowserSiteIdentity.canonicalSiteKey(
+                urlString: deps.windowMonitor.frontmostWindowURL()
+            )
+            let site = preferredBrowserSiteKey(
+                browserSiteKey: browserSiteKey,
+                titleResolvedSite: resolution.site
+            )
             if currentSite != site {
                 currentSite = site
                 if let site {
@@ -522,6 +528,23 @@ public final class SessionEngine: ObservableObject {
             currentTimelinePhase = nil
         }
         return timelineBlocks
+    }
+
+    private func preferredBrowserSiteKey(
+        browserSiteKey: String?,
+        titleResolvedSite: String?
+    ) -> String? {
+        if let titleResolvedSite,
+           siteObserver.classification(for: titleResolvedSite) != nil {
+            return titleResolvedSite
+        }
+
+        if let browserSiteKey,
+           siteObserver.classification(for: browserSiteKey) != nil {
+            return browserSiteKey
+        }
+
+        return browserSiteKey ?? titleResolvedSite
     }
 
     /// 直近のセッション記録（テスト・UI用）
