@@ -50,7 +50,9 @@ final class PresenceCSVLogger: @unchecked Sendable {
         fileHandle = try? FileHandle(forWritingTo: fileURL)
 
         // ヘッダー書き込み
-        let header = "timestamp,camera_present,camera_confidence,gaze_present,gaze_confidence,raw_score,ema_score,status\n"
+        let fields = ["timestamp", "camera_present", "camera_confidence",
+                      "gaze_present", "gaze_confidence", "raw_score", "ema_score", "status"]
+        let header = fields.joined(separator: ",") + "\n"
         fileHandle?.write(Data(header.utf8))
 
         osLogger.info("CSV logging started: \(fileURL.path)")
@@ -83,7 +85,7 @@ final class PresenceCSVLogger: @unchecked Sendable {
             gazeSensor.map { String(format: "%.3f", $0.confidence) } ?? "",
             String(format: "%.3f", entry.rawScore),
             String(format: "%.3f", entry.emaScore),
-            entry.status.rawValue,
+            entry.status.rawValue
         ].joined(separator: ",") + "\n"
 
         lock.withLock {

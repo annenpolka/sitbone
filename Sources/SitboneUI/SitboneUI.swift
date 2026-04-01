@@ -4,8 +4,6 @@ public import SwiftUI
 public import SitboneCore
 public import SitboneData
 
-// MARK: - フォーカス状態の色（Color定義はNotchOverlay.swiftに集約）
-
 extension FocusPhase {
     public var color: Color {
         switch self {

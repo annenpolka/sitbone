@@ -34,40 +34,39 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
     public init() {}
 
     public func captureFrame() async -> CGImage? {
-        // 権限チェック
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            break
-        case .notDetermined:
-            let granted = await AVCaptureDevice.requestAccess(for: .video)
-            guard granted else { return nil }
-        case .denied, .restricted:
-            return nil
-        @unknown default:
-            return nil
-        }
+        guard await checkCameraAuthorization() else { return nil }
 
-        // セッション起動 (初回のみ)
-        if !isRunning {
-            startSession()
-        }
-
+        if !isRunning { startSession() }
         guard isConfigured else { return nil }
 
         // キャッシュにフレームがあればそのまま返す
-        let cached = lock.withLock { $0.image }
-        if cached != nil { return cached }
+        if let cached = lock.withLock({ $0.image }) { return cached }
 
         // 初回起動時: 最初のフレームを待つ (500msタイムアウト)
-        return await withCheckedContinuation { continuation in
+        return await waitForFirstFrame()
+    }
+
+    private func checkCameraAuthorization() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            return await AVCaptureDevice.requestAccess(for: .video)
+        case .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    private func waitForFirstFrame() async -> CGImage? {
+        await withCheckedContinuation { continuation in
             captureQueue.async { [weak self] in
                 guard let self else {
                     continuation.resume(returning: nil)
                     return
                 }
-                // 待っている間にフレームが来たかもしれない
-                let frame = self.lock.withLock { $0.image }
-                if frame != nil {
+                if let frame = self.lock.withLock({ $0.image }) {
                     continuation.resume(returning: frame)
                     return
                 }
