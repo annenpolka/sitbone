@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+  echo "pre-commit: swiftlint が見つかりません。"
+  echo "pre-commit: 先に SwiftLint をインストールしてください。"
+  exit 1
+fi
+
+echo "pre-commit: make lint"
+make lint

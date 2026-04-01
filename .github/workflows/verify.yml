@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Lint And Test
+    name: Unit Tests
     runs-on: macos-15
     timeout-minutes: 20
     permissions:
@@ -25,12 +25,6 @@ jobs:
 
       - name: Show Swift Version
         run: swift --version
-
-      - name: Show SwiftLint Version
-        run: swiftlint version
-
-      - name: Lint
-        run: make lint
 
       - name: Unit Tests
         run: make test-unit

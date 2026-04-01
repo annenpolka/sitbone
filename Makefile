@@ -8,6 +8,10 @@ LOG_DIR      = .build/logs
 $(LOG_DIR):
 	@mkdir -p $(LOG_DIR)
 
+install-hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-commit .githooks/pre-push
+
 # Phase 1: コンパイラ検証
 compile: | $(LOG_DIR)
 	swift build 2>&1 | tee $(LOG_DIR)/compile.log

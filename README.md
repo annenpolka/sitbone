@@ -40,6 +40,9 @@ make coverage
 # 全検証 (compile → lint → test → sanitizers)
 make verify
 
+# Git hooks を有効化
+make install-hooks
+
 # 個別フェーズ
 make compile
 make lint          # swiftlint --strict
@@ -52,7 +55,9 @@ make test-ubsan    # Undefined Behavior Sanitizer
 make coverage-detail   # .build/logs/coverage.txt に出力
 ```
 
-GitHub Actions では `pull_request` と `main` への push ごとに `make lint` と `swift test` を実行する。
+ローカルでは `.githooks/pre-commit` で `make lint`、`.githooks/pre-push` で `swift test` を実行する。
+
+GitHub Actions では `pull_request` と `main` への push ごとに `make test-unit` を実行する。
 
 ## Architecture
 
