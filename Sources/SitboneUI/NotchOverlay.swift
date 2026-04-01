@@ -658,6 +658,7 @@ struct NotchDropdown: View {
                         totalTime: item.entry.totalTime,
                         onClassify: { classification in
                             engine.siteObserver.classify(site: item.site, as: classification)
+                            engine.objectWillChange.send()
                         }
                     )
                 }
@@ -736,7 +737,7 @@ struct WingShape: Shape {
     }
 }
 
-// MARK: - Live River Row (SiteObserverベース、2値トグル)
+// MARK: - Live River Row (SiteObserverベース、スライドトグル)
 
 struct LiveRiverRow: View {
     let site: String
@@ -762,16 +763,10 @@ struct LiveRiverRow: View {
 
             Spacer(minLength: 0)
 
-            // FLOW/DRIFTトグル
-            HStack(spacing: 0) {
-                toggleBtn("F", isSelected: isFlow, color: Color.sitboneFlow) {
-                    onClassify(.flow)
-                }
-                toggleBtn("D", isSelected: isDrift, color: Color.sitboneDrift) {
-                    onClassify(.drift)
-                }
+            // FLOW/DRIFTスライドトグル
+            SlideToggle(isFlow: isFlow, isDrift: isDrift) {
+                onClassify(isFlow ? .drift : .flow)
             }
-            .background(RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.04)))
         }
         .padding(.vertical, 1)
     }
@@ -781,19 +776,49 @@ struct LiveRiverRow: View {
         if isDrift { return Color.sitboneDrift }
         return .white
     }
+}
 
-    private func toggleBtn(_ label: String, isSelected: Bool, color: Color, action: @escaping () -> Void) -> some View {
+// MARK: - Slide Toggle (F/D セグメント + スライドインジケータ)
+
+struct SlideToggle: View {
+    let isFlow: Bool
+    let isDrift: Bool
+    let action: () -> Void
+
+    private let cellWidth: CGFloat = 18
+    private let cellHeight: CGFloat = 14
+
+    var body: some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(isSelected ? color : .white.opacity(0.15))
-                .frame(width: 18, height: 14)
-                .background(
+            ZStack(alignment: .leading) {
+                // スライドするインジケータ背景
+                if isFlow || isDrift {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(isSelected ? color.opacity(0.15) : .clear)
-                )
+                        .fill(indicatorColor.opacity(0.15))
+                        .frame(width: cellWidth, height: cellHeight)
+                        .offset(x: isFlow ? 0 : cellWidth)
+                }
+
+                // F / D ラベル
+                HStack(spacing: 0) {
+                    Text("F")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(isFlow ? Color.sitboneFlow : .white.opacity(0.15))
+                        .frame(width: cellWidth, height: cellHeight)
+                    Text("D")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(isDrift ? Color.sitboneDrift : .white.opacity(0.15))
+                        .frame(width: cellWidth, height: cellHeight)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.04)))
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isFlow)
         }
         .buttonStyle(.plain)
+    }
+
+    private var indicatorColor: Color {
+        isFlow ? Color.sitboneFlow : Color.sitboneDrift
     }
 }
 
