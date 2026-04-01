@@ -1,11 +1,17 @@
 // CameraFrameProvider — カメラフレーム取得のProtocol + 実装
 
 public import CoreGraphics
+import Foundation
 
 // MARK: - Protocol
 
 public protocol CameraFrameProviderProtocol: Sendable {
     func captureFrame() async -> CGImage?
+    func stopCapture()
+}
+
+extension CameraFrameProviderProtocol {
+    public func stopCapture() {}
 }
 
 // MARK: - AVCaptureSession実装 (常時稼働方式)
@@ -22,7 +28,8 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
     private var isConfigured = false
     private var isRunning = false
 
-    /// 最新フレームを常時保持
+    /// フレームの鮮度TTL (3秒以上古いフレームは破棄)
+    private let frameTTL: TimeInterval = 3.0
     private let lock = OSAllocatedUnfairLock<LatestFrame>(initialState: LatestFrame())
 
     /// 初回フレーム待ちのcontinuation
@@ -39,10 +46,18 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
         if !isRunning { startSession() }
         guard isConfigured else { return nil }
 
-        // キャッシュにフレームがあればそのまま返す
-        if let cached = lock.withLock({ $0.image }) { return cached }
+        // キャッシュにフレッシュなフレームがあれば返す
+        let cached = lock.withLock { state -> CGImage? in
+            guard let image = state.image,
+                  let capturedAt = state.capturedAt,
+                  Date().timeIntervalSince(capturedAt) < frameTTL else {
+                return nil
+            }
+            return image
+        }
+        if let cached { return cached }
 
-        // 初回起動時: 最初のフレームを待つ (500msタイムアウト)
+        // 初回起動時またはフレーム期限切れ: 次のフレームを待つ
         return await waitForFirstFrame()
     }
 
@@ -66,8 +81,17 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
                     continuation.resume(returning: nil)
                     return
                 }
-                if let frame = self.lock.withLock({ $0.image }) {
-                    continuation.resume(returning: frame)
+                // 待っている間にフレームが来たかもしれない
+                let fresh = self.lock.withLock { state -> CGImage? in
+                    guard let image = state.image,
+                          let at = state.capturedAt,
+                          Date().timeIntervalSince(at) < self.frameTTL else {
+                        return nil
+                    }
+                    return image
+                }
+                if let fresh {
+                    continuation.resume(returning: fresh)
                     return
                 }
                 let isFirst = self.startupContinuations.isEmpty
@@ -77,7 +101,7 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
                         guard let self, !self.startupContinuations.isEmpty else { return }
                         let pending = self.startupContinuations
                         self.startupContinuations = []
-                        self.logger.debug("初回フレーム取得タイムアウト")
+                        self.logger.debug("フレーム取得タイムアウト")
                         for cont in pending {
                             cont.resume(returning: nil)
                         }
@@ -135,10 +159,11 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
     }
 
     private func handleFrame(_ cgImage: CGImage?) {
-        // 最新フレームを更新
+        // 最新フレームを更新 (タイムスタンプ付き)
         if let cgImage {
             lock.withLock { state in
                 state.image = cgImage
+                state.capturedAt = Date()
             }
         }
 
@@ -152,11 +177,15 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
         }
     }
 
-    public func stopSession() {
+    public func stopCapture() {
         captureQueue.async { [weak self] in
             guard let self else { return }
             self.session.stopRunning()
             self.isRunning = false
+            self.lock.withLock { state in
+                state.image = nil
+                state.capturedAt = nil
+            }
             self.logger.info("カメラセッション停止")
         }
     }
@@ -195,6 +224,7 @@ private final class BufferDelegate: NSObject, AVCaptureVideoDataOutputSampleBuff
 
 private struct LatestFrame: Sendable {
     nonisolated(unsafe) var image: CGImage?
+    var capturedAt: Date?
 }
 #endif
 

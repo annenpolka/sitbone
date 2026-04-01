@@ -48,8 +48,8 @@ public enum GazeClassifier {
             let avgDeviation = (leftDeviation + rightDeviation) / 2.0
             pupilConfidence = max(0.0, 1.0 - avgDeviation)
         } else {
-            // 瞳孔データなし → 中立 (正面性のみで判定)
-            pupilConfidence = 1.0
+            // 瞳孔データなし → 確証が弱いのでconfidenceを下げる
+            pupilConfidence = 0.5
         }
 
         // 総合confidence: 正面性70% + 瞳孔30%
@@ -95,8 +95,12 @@ public final class GazeDetector: SensorProtocol, @unchecked Sendable {
             return SensorReading(isPresent: false, confidence: 1.0)
         }
 
-        let yaw = face.yaw?.doubleValue ?? 0.0
-        let pitch = face.pitch?.doubleValue ?? 0.0
+        // yaw/pitchが取得できない場合は判定不能
+        guard let yawNumber = face.yaw, let pitchNumber = face.pitch else {
+            return .unavailable
+        }
+        let yaw = yawNumber.doubleValue
+        let pitch = pitchNumber.doubleValue
 
         // 瞳孔位置の抽出
         let leftPupilX = extractPupilX(from: face.landmarks?.leftPupil)

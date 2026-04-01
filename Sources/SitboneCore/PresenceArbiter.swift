@@ -13,6 +13,7 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
     private let lock = OSAllocatedUnfairLock(initialState: EMAState())
     private let csvLogger: PresenceCSVLogger?
     private let enabledLock = OSAllocatedUnfairLock(initialState: true)
+    private let frameProvider: (any CameraFrameProviderProtocol)?
 
     public var isEnabled: Bool {
         get { enabledLock.withLock { $0 } }
@@ -22,24 +23,33 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
     public init(
         sensors: [any SensorProtocol],
         threshold: Double = 0.4,
-        emaAlpha: Double = 0.3
+        emaAlpha: Double = 0.3,
+        frameProvider: (any CameraFrameProviderProtocol)? = nil
     ) {
         self.sensors = sensors
         self.threshold = threshold
         self.emaAlpha = emaAlpha
         self.csvLogger = nil
+        self.frameProvider = frameProvider
     }
 
     init(
         sensors: [any SensorProtocol],
         threshold: Double = 0.4,
         emaAlpha: Double = 0.3,
-        csvLogger: PresenceCSVLogger?
+        csvLogger: PresenceCSVLogger?,
+        frameProvider: (any CameraFrameProviderProtocol)? = nil
     ) {
         self.sensors = sensors
         self.threshold = threshold
         self.emaAlpha = emaAlpha
         self.csvLogger = csvLogger
+        self.frameProvider = frameProvider
+    }
+
+    /// カメラセッションを停止する
+    public func stopCamera() {
+        frameProvider?.stopCapture()
     }
 
     public func detect() async -> PresenceReading {

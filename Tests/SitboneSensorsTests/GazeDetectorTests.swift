@@ -78,13 +78,18 @@ struct GazeClassificationTests {
             #expect(offCenter.confidence < centered.confidence)
         }
 
-        @Test("瞳孔データなし → 正面性のみで判定")
-        func noPupilDataUsesOrientationOnly() {
-            let result = GazeClassifier.classify(
+        @Test("瞳孔データなし → presentだがconfidenceが下がる")
+        func noPupilDataReducesConfidence() {
+            let withPupil = GazeClassifier.classify(
+                yaw: 0.0, pitch: 0.0,
+                leftPupilX: 0.5, rightPupilX: 0.5
+            )
+            let noPupil = GazeClassifier.classify(
                 yaw: 0.0, pitch: 0.0,
                 leftPupilX: nil, rightPupilX: nil
             )
-            #expect(result.isPresent == true)
+            #expect(noPupil.isPresent == true)
+            #expect(noPupil.confidence < withPupil.confidence)
         }
     }
 

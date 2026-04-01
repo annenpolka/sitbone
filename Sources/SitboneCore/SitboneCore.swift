@@ -60,7 +60,8 @@ public struct Dependencies: Sendable {
             .appendingPathComponent(".sitbone/logs")
         let arbiter = PresenceArbiter(
             sensors: [camera, gaze],
-            csvLogger: PresenceCSVLogger(directory: logsDir)
+            csvLogger: PresenceCSVLogger(directory: logsDir),
+            frameProvider: frameProvider
         )
         return Dependencies(
             clock: SystemClock(),
@@ -282,6 +283,9 @@ public final class SessionEngine: ObservableObject {
         didSet {
             if let arbiter = deps.presenceDetector as? PresenceArbiter {
                 arbiter.isEnabled = isCameraEnabled
+                if !isCameraEnabled {
+                    arbiter.stopCamera()
+                }
             }
         }
     }
@@ -342,6 +346,11 @@ public final class SessionEngine: ObservableObject {
         tickTask?.cancel()
         tickTask = nil
         isSessionActive = false
+
+        // カメラセッション停止
+        if let arbiter = deps.presenceDetector as? PresenceArbiter {
+            arbiter.stopCamera()
+        }
 
         // SessionRecord生成 (ADR-0012)
         let timeline = flushTimeline()
