@@ -223,6 +223,10 @@ public final class SessionEngine: ObservableObject {
         self.siteObserver = observer
         self.siteObservers[defaultProfile.id] = observer
         self.machine = FocusStateMachine(deps: deps)
+        // デフォルトプロファイルにディスクバックドストアを即時作成
+        if persistenceEnabled {
+            profileStores[defaultProfile.id] = JSONSessionStore(baseDir: profileDir(for: defaultProfile))
+        }
     }
 
     public func startSession() {
@@ -438,8 +442,12 @@ public final class SessionEngine: ObservableObject {
             currentPhaseDuration = 0
         }
 
+        // 新プロファイルの累計をロード（クロス汚染防止）
+        cachedCumulative = CumulativeRecord()
+        cumulativeFocusedHours = 0
         if persistenceEnabled {
             loadClassificationsForProfile(profile)
+            loadCumulativeData()
         }
     }
 
@@ -551,7 +559,7 @@ public final class SessionEngine: ObservableObject {
     private func profileDir(for profile: SessionProfile) -> URL {
         let dir = Self.sitboneDir
             .appendingPathComponent("profiles", isDirectory: true)
-            .appendingPathComponent(profile.name, isDirectory: true)
+            .appendingPathComponent(profile.id.uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -627,15 +635,20 @@ public final class SessionEngine: ObservableObject {
         )
         cumulativeFocusedHours = cachedCumulative.totalFocusedHours
 
-        // 保存
+        // 保存（成功した場合のみ旧ファイル削除）
         if persistenceEnabled {
             let record = cachedCumulative
             let store = activeStore
-            Task { try? await store.saveCumulative(record) }
+            let url = legacyURL
+            Task {
+                do {
+                    try await store.saveCumulative(record)
+                    try? FileManager.default.removeItem(at: url)
+                } catch {
+                    // 保存失敗時は旧ファイルを残す
+                }
+            }
         }
-
-        // 旧ファイル削除
-        try? FileManager.default.removeItem(at: legacyURL)
     }
 
     public func saveClassifications() {
