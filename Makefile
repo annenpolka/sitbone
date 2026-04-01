@@ -1,3 +1,6 @@
+SHELL        = /bin/bash
+.SHELLFLAGS  = -eo pipefail -c
+
 SCHEME       = Sitbone
 DESTINATION  = platform=macOS
 LOG_DIR      = .build/logs

@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 // NotchOverlay — ノッチ左右にコンパクトな翼 + ホバーで詳細展開
 // ADR-0006
 
@@ -52,8 +53,8 @@ struct NotchGeometry: Sendable {
     @MainActor
     private static func builtInScreen() -> NSScreen? {
         for screen in NSScreen.screens {
-            if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
-               CGDisplayIsBuiltin(id) != 0 {
+            if let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+               CGDisplayIsBuiltin(displayID) != 0 {
                 return screen
             }
         }
@@ -82,67 +83,15 @@ public final class NotchOverlayController {
 
     public func show() {
         guard leftPanel == nil else { return }
-        let geo = NotchGeometry.detect()
-        self.geo = geo
+        let geometry = NotchGeometry.detect()
+        self.geo = geometry
 
-        // 翼: notchの裏に大きくオーバーラップ（接合部をnotchが隠す）
-        let visibleWidth: CGFloat = 14  // notchから出て見える部分
-        let overlapInto: CGFloat = 16   // notchの裏に隠れる部分
-        let totalWidth = visibleWidth + overlapInto
-        let h = geo.notchHeight
-        leftPanel = makePanel(
-            frame: NSRect(x: geo.notchLeft - visibleWidth, y: geo.notchBottomY, width: totalWidth, height: h),
-            content: LeftWing(engine: engine, height: h),
-            interactive: false
-        )
-
-        // 右翼: 左翼と同じグローラインインジケーター
-        rightPanel = makePanel(
-            frame: NSRect(x: geo.notchRight - overlapInto, y: geo.notchBottomY, width: totalWidth, height: h),
-            content: RightWing(engine: engine, height: h),
-            interactive: false
-        )
-
-        // ドロップダウンパネル: notchと同幅（onHoverなし、クリックのみinteractive）
-        let notchWidth = geo.notchRight - geo.notchLeft
-        let expandHeight: CGFloat = 350  // リバー表示時も収まる余裕
-        let expandPanel = makePanel(
-            frame: NSRect(
-                x: geo.notchLeft,
-                y: geo.notchBottomY - expandHeight,
-                width: notchWidth,
-                height: expandHeight + h
-            ),
-            content: NotchDropdown(
-                engine: engine,
-                notchWidth: notchWidth,
-                notchHeight: h,
-                hoverState: hoverState
-            ),
-            interactive: true
-        )
-        // 初期状態: マウスイベント透過（ホバー中のみ有効化）
-        expandPanel.ignoresMouseEvents = true
-        self.expandPanel = expandPanel
-
-        // Ghost Teacherバナー
+        setupWingPanels(with: geometry)
+        setupExpandPanel(with: geometry)
         setupGhostPanel()
-
-        leftPanel?.orderFrontRegardless()
-        rightPanel?.orderFrontRegardless()
-        expandPanel.orderFrontRegardless()
-        ghostPanel?.orderFrontRegardless()
-
-        // マウス位置ポーリングでホバー制御を開始
+        orderPanelsFront()
         startHoverPolling()
-
-        // Ghost Teacherのディスプレイ追従
-        ghostTeacherCancellable = engine.$pendingGhostTeacher
-            .receive(on: RunLoop.main)
-            .sink { [weak self] site in
-                guard site != nil else { return }
-                self?.repositionGhostPanel()
-            }
+        observeGhostTeacherChanges()
     }
 
     public func hide() {
@@ -155,6 +104,73 @@ public final class NotchOverlayController {
 
     public var isVisible: Bool { leftPanel != nil }
 
+    private func setupWingPanels(with geometry: NotchGeometry) {
+        let visibleWidth: CGFloat = 14
+        let overlapInto: CGFloat = 16
+        let totalWidth = visibleWidth + overlapInto
+        let notchHeight = geometry.notchHeight
+
+        leftPanel = makePanel(
+            frame: NSRect(
+                x: geometry.notchLeft - visibleWidth,
+                y: geometry.notchBottomY,
+                width: totalWidth,
+                height: notchHeight
+            ),
+            content: LeftWing(engine: engine, height: notchHeight),
+            interactive: false
+        )
+
+        rightPanel = makePanel(
+            frame: NSRect(
+                x: geometry.notchRight - overlapInto,
+                y: geometry.notchBottomY,
+                width: totalWidth,
+                height: notchHeight
+            ),
+            content: RightWing(engine: engine, height: notchHeight),
+            interactive: false
+        )
+    }
+
+    private func setupExpandPanel(with geometry: NotchGeometry) {
+        let notchWidth = geometry.notchRight - geometry.notchLeft
+        let expandHeight: CGFloat = 350
+        let expandPanel = makePanel(
+            frame: NSRect(
+                x: geometry.notchLeft,
+                y: geometry.notchBottomY - expandHeight,
+                width: notchWidth,
+                height: expandHeight + geometry.notchHeight
+            ),
+            content: NotchDropdown(
+                engine: engine,
+                notchWidth: notchWidth,
+                notchHeight: geometry.notchHeight,
+                hoverState: hoverState
+            ),
+            interactive: true
+        )
+        expandPanel.ignoresMouseEvents = true
+        self.expandPanel = expandPanel
+    }
+
+    private func orderPanelsFront() {
+        leftPanel?.orderFrontRegardless()
+        rightPanel?.orderFrontRegardless()
+        expandPanel?.orderFrontRegardless()
+        ghostPanel?.orderFrontRegardless()
+    }
+
+    private func observeGhostTeacherChanges() {
+        ghostTeacherCancellable = engine.$pendingGhostTeacher
+            .receive(on: RunLoop.main)
+            .sink { [weak self] site in
+                guard site != nil else { return }
+                self?.repositionGhostPanel()
+            }
+    }
+
     /// Ghost Teacherパネルをフォーカスディスプレイの上端中央に配置
     private func setupGhostPanel() {
         ghostPanel?.close()
@@ -164,7 +180,7 @@ public final class NotchOverlayController {
         guard let screen = NSScreen.main else { return }
         let rect = ghostPanelFrame(screenFrame: screen.frame, safeTop: screen.safeAreaInsets.top)
 
-        let gp = makePanel(
+        let ghostTeacherPanel = makePanel(
             frame: rect,
             content: GhostTeacherBanner(engine: engine, onReposition: { [weak self] in
                 // サイトが変わるたびにフォーカスディスプレイに再配置
@@ -172,8 +188,8 @@ public final class NotchOverlayController {
             }),
             interactive: true
         )
-        gp.ignoresMouseEvents = false
-        self.ghostPanel = gp
+        ghostTeacherPanel.ignoresMouseEvents = false
+        self.ghostPanel = ghostTeacherPanel
     }
 
     private func repositionGhostPanel() {
@@ -219,8 +235,9 @@ public final class NotchOverlayController {
         // Ghost Teacher同画面チェック
         let ghostBlocks: Bool
         if engine.pendingGhostTeacher != nil,
-           let gp = ghostPanel, let lp = leftPanel,
-           gp.screen == lp.screen {
+           let ghostTeacherPanel = ghostPanel,
+           let leftWingPanel = leftPanel,
+           ghostTeacherPanel.screen == leftWingPanel.screen {
             ghostBlocks = true
         } else {
             ghostBlocks = false
@@ -245,9 +262,9 @@ public final class NotchOverlayController {
         expandPanel?.ignoresMouseEvents = !hovering
 
         // Ghost Teacherの表示制御
-        if let gp = ghostPanel, let lp = leftPanel {
-            let sameScreen = gp.screen == lp.screen
-            gp.alphaValue = (hovering && sameScreen) ? 0 : 1
+        if let ghostTeacherPanel = ghostPanel, let leftWingPanel = leftPanel {
+            let sameScreen = ghostTeacherPanel.screen == leftWingPanel.screen
+            ghostTeacherPanel.alphaValue = (hovering && sameScreen) ? 0 : 1
         }
     }
 
@@ -255,16 +272,24 @@ public final class NotchOverlayController {
     private func screenOfFocusedWindow() -> NSScreen? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        var value: AnyObject?
-        let err = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &value)
-        guard err == .success, let window = value else { return nil }
+        var focusedWindowValue: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(
+            axApp,
+            kAXFocusedWindowAttribute as CFString,
+            &focusedWindowValue
+        )
+        guard error == .success, let focusedWindowValue else { return nil }
+        guard CFGetTypeID(focusedWindowValue) == AXUIElementGetTypeID() else { return nil }
+        let focusedWindow = unsafeDowncast(focusedWindowValue, to: AXUIElement.self)
 
-        var posValue: AnyObject?
-        AXUIElementCopyAttributeValue(window as! AXUIElement, kAXPositionAttribute as CFString, &posValue)
-        guard let posValue else { return nil }
+        var positionValue: CFTypeRef?
+        AXUIElementCopyAttributeValue(focusedWindow, kAXPositionAttribute as CFString, &positionValue)
+        guard let positionValue else { return nil }
+        guard CFGetTypeID(positionValue) == AXValueGetTypeID() else { return nil }
+        let windowPosition = unsafeDowncast(positionValue, to: AXValue.self)
 
         var point = CGPoint.zero
-        AXValueGetValue(posValue as! AXValue, .cgPoint, &point)
+        AXValueGetValue(windowPosition, .cgPoint, &point)
 
         // CGのy座標系（上が0）→ NSScreenのy座標系（下が0）に変換
         // NSScreen.screens[0]がプライマリ（一番高いmaxYを持つ）
@@ -273,10 +298,8 @@ public final class NotchOverlayController {
         }
 
         // ウィンドウ位置を含むスクリーンを探す
-        for screen in NSScreen.screens {
-            if screen.frame.contains(point) {
-                return screen
-            }
+        for screen in NSScreen.screens where screen.frame.contains(point) {
+            return screen
         }
         return nil
     }
@@ -440,8 +463,8 @@ struct NotchDropdown: View {
                             value: geo.size.height
                         )
                     })
-                    .onPreferenceChange(ContentHeightKey.self) { h in
-                        hoverState.contentHeight = h
+                    .onPreferenceChange(ContentHeightKey.self) { height in
+                        hoverState.contentHeight = height
                     }
                     .offset(y: isHovering ? 0 : -120)
                     .opacity(isHovering ? 1 : 0)
@@ -518,8 +541,8 @@ struct NotchDropdown: View {
             // [+] 新規作成: ワンタップで自動命名して作成
             Button {
                 let name = "profile \(engine.profiles.count)"
-                let p = engine.createProfile(name: name)
-                engine.switchProfile(to: p)
+                let profile = engine.createProfile(name: name)
+                engine.switchProfile(to: profile)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 7, weight: .bold))
@@ -572,9 +595,9 @@ struct NotchDropdown: View {
             .frame(height: 3)
 
             HStack(spacing: 6) {
-                counterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
-                counterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
-                counterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
+                notchDropdownCounterItem("↩", engine.counters.driftRecovered.value, Color.sitboneFlow)
+                notchDropdownCounterItem("←", engine.counters.awayRecovered.value, Color.sitboneAccent)
+                notchDropdownCounterItem("✕", engine.counters.deserted.value, Color.sitboneAway)
                 Spacer(minLength: 0)
                 if engine.cachedCumulative.totalFocusedHours > 0 {
                     Text(formatCumulativeHours(engine.cachedCumulative.totalFocusedHours))
@@ -588,8 +611,16 @@ struct NotchDropdown: View {
                 let cls = engine.siteObserver.effectiveClassification(for: target)
                 HStack(spacing: 4) {
                     // 分類バッジ
+                    let classificationColor: Color =
+                        if cls == .flow {
+                            Color.sitboneFlow
+                        } else if cls == .drift {
+                            Color.sitboneDrift
+                        } else {
+                            .white.opacity(0.2)
+                        }
                     Circle()
-                        .fill(cls == .flow ? Color.sitboneFlow : cls == .drift ? Color.sitboneDrift : .white.opacity(0.2))
+                        .fill(classificationColor)
                         .frame(width: 5, height: 5)
                     Text(engine.currentApp)
                         .font(.system(size: 9, weight: .medium))
@@ -681,20 +712,7 @@ struct NotchDropdown: View {
         .padding(.vertical, 8)
     }
 
-    private func counterItem(_ symbol: String, _ count: Int, _ color: Color) -> some View {
-        HStack(spacing: 2) {
-            Text(symbol)
-                .font(.system(size: 9))
-                .foregroundStyle(color)
-            Text("\(count)")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.7))
-        }
-    }
-
-    private var phaseColor: Color {
-        engine.focusState?.phase.color ?? .gray
-    }
+    private var phaseColor: Color { notchDropdownPhaseColor(engine: engine) }
 }
 
 // MARK: - Wing Shape (notch側が直角、外側が角丸)
@@ -707,33 +725,53 @@ struct WingShape: Shape {
     func path(in rect: CGRect) -> Path {
         // notchの裏に隠れる部分は直角でOK。見える外側だけ角丸。
         // notchの物理角丸 ≈ 7pt
-        let r: CGFloat = 7
-        var p = Path()
+        let cornerRadius: CGFloat = 7
+        var path = Path()
         switch side {
         case .left:
             // 左上を角丸、他は直角（右側はnotchの裏に隠れる）
-            p.move(to: CGPoint(x: r, y: 0))
-            p.addLine(to: CGPoint(x: rect.maxX, y: 0))
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            p.addLine(to: CGPoint(x: r, y: rect.maxY))
-            p.addArc(center: CGPoint(x: r, y: rect.maxY - r),
-                      radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
-            p.addLine(to: CGPoint(x: 0, y: r))
-            p.addArc(center: CGPoint(x: r, y: r),
-                      radius: r, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            path.move(to: CGPoint(x: cornerRadius, y: 0))
+            path.addLine(to: CGPoint(x: rect.maxX, y: 0))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: cornerRadius, y: rect.maxY))
+            path.addArc(
+                center: CGPoint(x: cornerRadius, y: rect.maxY - cornerRadius),
+                radius: cornerRadius,
+                startAngle: .degrees(90),
+                endAngle: .degrees(180),
+                clockwise: false
+            )
+            path.addLine(to: CGPoint(x: 0, y: cornerRadius))
+            path.addArc(
+                center: CGPoint(x: cornerRadius, y: cornerRadius),
+                radius: cornerRadius,
+                startAngle: .degrees(180),
+                endAngle: .degrees(270),
+                clockwise: false
+            )
         case .right:
             // 右上を角丸、他は直角（左側はnotchの裏に隠れる）
-            p.move(to: CGPoint(x: 0, y: 0))
-            p.addLine(to: CGPoint(x: rect.maxX - r, y: 0))
-            p.addArc(center: CGPoint(x: rect.maxX - r, y: r),
-                      radius: r, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
-            p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r),
-                      radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-            p.addLine(to: CGPoint(x: 0, y: rect.maxY))
+            path.move(to: CGPoint(x: 0, y: 0))
+            path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: 0))
+            path.addArc(
+                center: CGPoint(x: rect.maxX - cornerRadius, y: cornerRadius),
+                radius: cornerRadius,
+                startAngle: .degrees(270),
+                endAngle: .degrees(0),
+                clockwise: false
+            )
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerRadius))
+            path.addArc(
+                center: CGPoint(x: rect.maxX - cornerRadius, y: rect.maxY - cornerRadius),
+                radius: cornerRadius,
+                startAngle: .degrees(0),
+                endAngle: .degrees(90),
+                clockwise: false
+            )
+            path.addLine(to: CGPoint(x: 0, y: rect.maxY))
         }
-        p.closeSubpath()
-        return p
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -776,6 +814,22 @@ struct LiveRiverRow: View {
         if isDrift { return Color.sitboneDrift }
         return .white
     }
+}
+
+private func notchDropdownCounterItem(_ symbol: String, _ count: Int, _ color: Color) -> some View {
+    HStack(spacing: 2) {
+        Text(symbol)
+            .font(.system(size: 9))
+            .foregroundStyle(color)
+        Text("\(count)")
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.7))
+    }
+}
+
+@MainActor
+private func notchDropdownPhaseColor(engine: SessionEngine) -> Color {
+    engine.focusState?.phase.color ?? .gray
 }
 
 // MARK: - Slide Toggle (F/D セグメント + スライドインジケータ)
@@ -919,11 +973,11 @@ extension Color {
 // MARK: - Time formatting
 
 func formatCompactTime(_ interval: TimeInterval) -> String {
-    let h = Int(interval) / 3600
-    let m = (Int(interval) % 3600) / 60
-    let s = Int(interval) % 60
-    if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
-    return String(format: "%d:%02d", m, s)
+    let hours = Int(interval) / 3600
+    let minutes = (Int(interval) % 3600) / 60
+    let seconds = Int(interval) % 60
+    if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
+    return String(format: "%d:%02d", minutes, seconds)
 }
 
 /// プロファイルカラー × フェーズ → 表示色
@@ -938,9 +992,9 @@ func profilePhaseColor(phase: FocusPhase?, hue: Double) -> Color {
 /// Ghost Teacherパネル位置計算
 func ghostPanelFrame(screenFrame: CGRect, safeTop: CGFloat, width: CGFloat = 280, height: CGFloat = 64) -> NSRect {
     let topY = screenFrame.maxY - safeTop
-    let x = screenFrame.midX - width / 2
-    let y = topY - height - 6
-    return NSRect(x: x, y: y, width: width, height: height)
+    let originX = screenFrame.midX - width / 2
+    let originY = topY - height - 6
+    return NSRect(x: originX, y: originY, width: width, height: height)
 }
 
 // MARK: - Visual Effect Background
@@ -950,11 +1004,15 @@ struct VisualEffectBackground: NSViewRepresentable {
     let blendingMode: NSVisualEffectView.BlendingMode
 
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = material; v.blendingMode = blendingMode; v.state = .active
-        return v
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
     }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {
-        v.material = material; v.blendingMode = blendingMode
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
+        view.blendingMode = blendingMode
     }
 }

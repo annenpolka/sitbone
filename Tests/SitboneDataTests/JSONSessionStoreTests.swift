@@ -32,7 +32,7 @@ struct JSONSessionStoreTests {
             deserted: 0,
             timeline: [
                 TimelineBlock(state: .flow, duration: 2400),
-                TimelineBlock(state: .drift, duration: 600),
+                TimelineBlock(state: .drift, duration: 600)
             ]
         )
     }

@@ -75,9 +75,9 @@ struct UILogicTests {
     @Test("FocusPhase.colorはnilでない")
     func focusPhaseColorsExist() {
         // Color同士の直接比較は困難だが、クラッシュしないことを確認
-        let _ = FocusPhase.flow.color
-        let _ = FocusPhase.drift.color
-        let _ = FocusPhase.away.color
+        _ = FocusPhase.flow.color
+        _ = FocusPhase.drift.color
+        _ = FocusPhase.away.color
     }
 
     // MARK: - profilePhaseColor

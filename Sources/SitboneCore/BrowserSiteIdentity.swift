@@ -2,7 +2,7 @@ import Foundation
 
 public enum BrowserSiteIdentity {
     private static let secondLevelCountryDomains: Set<String> = [
-        "ac", "co", "com", "edu", "go", "gov", "net", "or", "org",
+        "ac", "co", "com", "edu", "go", "gov", "net", "or", "org"
     ]
 
     /// URL文字列から同一サイト判定用の安定キーを作る

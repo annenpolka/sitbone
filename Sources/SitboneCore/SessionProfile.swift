@@ -2,7 +2,6 @@
 // ADR-0011
 
 public import Foundation
-public import SitboneData
 
 public struct SessionProfile: Sendable, Identifiable, Codable, Equatable {
     public let id: UUID
@@ -34,22 +33,24 @@ public struct SessionProfile: Sendable, Identifiable, Codable, Equatable {
 // ThresholdsをCodableに
 extension Thresholds: Codable {
     enum CodingKeys: String, CodingKey {
-        case t1, t2, flowRecovery
+        case flowThreshold = "t1"
+        case awayThreshold = "t2"
+        case flowRecovery
     }
 
     public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            t1: try c.decode(TimeInterval.self, forKey: .t1),
-            t2: try c.decode(TimeInterval.self, forKey: .t2),
-            flowRecovery: try c.decode(TimeInterval.self, forKey: .flowRecovery)
+            driftDelay: try container.decode(TimeInterval.self, forKey: .flowThreshold),
+            awayDelay: try container.decode(TimeInterval.self, forKey: .awayThreshold),
+            flowRecovery: try container.decode(TimeInterval.self, forKey: .flowRecovery)
         )
     }
 
     public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(t1, forKey: .t1)
-        try c.encode(t2, forKey: .t2)
-        try c.encode(flowRecovery, forKey: .flowRecovery)
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(driftDelay, forKey: .flowThreshold)
+        try container.encode(awayDelay, forKey: .awayThreshold)
+        try container.encode(flowRecovery, forKey: .flowRecovery)
     }
 }
