@@ -4,8 +4,6 @@ public import SwiftUI
 public import SitboneCore
 public import SitboneData
 
-// MARK: - フォーカス状態の色（Color定義はNotchOverlay.swiftに集約）
-
 extension FocusPhase {
     public var color: Color {
         switch self {
@@ -46,6 +44,8 @@ public struct MenuBarView: View {
 
             Divider()
             profileSection
+            Divider()
+            cameraToggle
             Divider()
             sessionToggle
             Divider()
@@ -266,6 +266,19 @@ public struct MenuBarView: View {
                 }
             }
         }
+    }
+
+    private var cameraToggle: some View {
+        Toggle(isOn: $engine.isCameraEnabled) {
+            HStack(spacing: 4) {
+                Image(systemName: engine.isCameraEnabled ? "video.fill" : "video.slash.fill")
+                    .font(.caption)
+                Text("Camera")
+                    .font(.caption)
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
     }
 
     private var sessionToggle: some View {

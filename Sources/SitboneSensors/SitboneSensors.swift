@@ -195,3 +195,15 @@ public struct MockPresenceDetector: PresenceDetectorProtocol, Sendable {
 
     public func detect() async -> PresenceReading { reading }
 }
+
+public final class MockSensor: SensorProtocol, @unchecked Sendable {
+    public let weight: SensorWeight
+    public var reading: SensorReading
+
+    public init(name: String, baseWeight: Double, reading: SensorReading) {
+        self.weight = SensorWeight(name: name, baseWeight: baseWeight)
+        self.reading = reading
+    }
+
+    public func read() async -> SensorReading { reading }
+}

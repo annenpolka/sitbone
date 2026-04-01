@@ -51,13 +51,26 @@ public struct Dependencies: Sendable {
         self.store = store
     }
 
-    public static let live = Dependencies(
-        clock: SystemClock(),
-        windowMonitor: NSWorkspaceWindowMonitor(),
-        idleDetector: CGEventSourceIdleDetector(),
-        presenceDetector: MockPresenceDetector(status: .unknown),
-        store: InMemorySessionStore()
-    )
+    public static let live: Dependencies = {
+        let frameProvider = AVCameraFrameProvider()
+        let camera = CameraDetector(frameProvider: frameProvider)
+        let gaze = GazeDetector(frameProvider: frameProvider)
+        let logsDir = FileManager.default
+            .homeDirectoryForCurrentUser
+            .appendingPathComponent(".sitbone/logs")
+        let arbiter = PresenceArbiter(
+            sensors: [camera, gaze],
+            csvLogger: PresenceCSVLogger(directory: logsDir),
+            frameProvider: frameProvider
+        )
+        return Dependencies(
+            clock: SystemClock(),
+            windowMonitor: NSWorkspaceWindowMonitor(),
+            idleDetector: CGEventSourceIdleDetector(),
+            presenceDetector: arbiter,
+            store: InMemorySessionStore()
+        )
+    }()
 
     public static func test(
         clock: any ClockProtocol = FixedClock(),
@@ -265,6 +278,18 @@ public final class SessionEngine: ObservableObject {
     /// プロファイル別SessionStoreのキャッシュ (ADR-0012)
     private var profileStores: [UUID: any SessionStoreProtocol] = [:]
 
+    /// カメラによるpresence検出の有効/無効
+    @Published public var isCameraEnabled: Bool = true {
+        didSet {
+            if let arbiter = deps.presenceDetector as? PresenceArbiter {
+                arbiter.isEnabled = isCameraEnabled
+                if !isCameraEnabled {
+                    arbiter.stopCamera()
+                }
+            }
+        }
+    }
+
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
 
@@ -321,6 +346,11 @@ public final class SessionEngine: ObservableObject {
         tickTask?.cancel()
         tickTask = nil
         isSessionActive = false
+
+        // カメラセッション停止
+        if let arbiter = deps.presenceDetector as? PresenceArbiter {
+            arbiter.stopCamera()
+        }
 
         // SessionRecord生成 (ADR-0012)
         let timeline = flushTimeline()

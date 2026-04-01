@@ -55,6 +55,26 @@ coverage-detail:
 		-format=text -show-line-counts-or-regions > $(LOG_DIR)/coverage.txt
 	@echo "Coverage detail written to $(LOG_DIR)/coverage.txt"
 
+# .app バンドル生成
+APP_NAME     = Sitbone
+APP_BUNDLE   = .build/$(APP_NAME).app
+BINARY       = .build/debug/$(APP_NAME)
+CONTENTS     = $(APP_BUNDLE)/Contents
+MACOS_DIR    = $(CONTENTS)/MacOS
+RESOURCES    = $(CONTENTS)/Resources
+
+app: compile
+	@rm -rf $(APP_BUNDLE)
+	@mkdir -p $(MACOS_DIR) $(RESOURCES)
+	@cp $(BINARY) $(MACOS_DIR)/$(APP_NAME)
+	@cp -r Sources/Sitbone/Resources/Assets.xcassets $(RESOURCES)/ 2>/dev/null || true
+	@cp Sources/Sitbone/Info.plist $(CONTENTS)/Info.plist
+	@codesign --force --sign "Sitbone Dev" $(APP_BUNDLE)
+	@echo "=== $(APP_BUNDLE) ready ==="
+
+run: app
+	@open $(APP_BUNDLE)
+
 # 全検証（早いフェーズで失敗すれば後続は不要）
 verify: compile lint test-unit test-asan test-tsan test-ubsan
 	@echo "=== All verification phases passed ==="

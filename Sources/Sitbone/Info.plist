@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>Sitbone</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.sitbone</string>
+	<key>CFBundleName</key>
+	<string>Sitbone</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Sitbone uses the camera to detect your presence for focus tracking. Images are never saved and are discarded immediately after processing.</string>
+</dict>
+</plist>
