@@ -152,17 +152,10 @@ public final class NotchOverlayController {
 
         // NSScreen.main = フォーカスのあるディスプレイ
         guard let screen = NSScreen.main else { return }
-        let frame = screen.frame
-        let safe = screen.safeAreaInsets
-        let topY = frame.maxY - safe.top  // メニューバー/notchの下端
-
-        let ghostWidth: CGFloat = 280
-        let ghostHeight: CGFloat = 64
-        let ghostX = frame.midX - ghostWidth / 2
-        let ghostY = topY - ghostHeight - 6
+        let rect = ghostPanelFrame(screenFrame: screen.frame, safeTop: screen.safeAreaInsets.top)
 
         let gp = makePanel(
-            frame: NSRect(x: ghostX, y: ghostY, width: ghostWidth, height: ghostHeight),
+            frame: rect,
             content: GhostTeacherBanner(engine: engine, onReposition: { [weak self] in
                 // サイトが変わるたびにフォーカスディスプレイに再配置
                 self?.repositionGhostPanel()
@@ -176,16 +169,8 @@ public final class NotchOverlayController {
     private func repositionGhostPanel() {
         guard let panel = ghostPanel else { return }
         let screen = screenOfFocusedWindow() ?? NSScreen.main ?? NSScreen.screens[0]
-        let frame = screen.frame
-        let safe = screen.safeAreaInsets
-        let topY = frame.maxY - safe.top
-
-        let ghostWidth: CGFloat = 280
-        let ghostHeight: CGFloat = 64
-        let ghostX = frame.midX - ghostWidth / 2
-        let ghostY = topY - ghostHeight - 6
-
-        panel.setFrame(NSRect(x: ghostX, y: ghostY, width: ghostWidth, height: ghostHeight), display: true)
+        let rect = ghostPanelFrame(screenFrame: screen.frame, safeTop: screen.safeAreaInsets.top)
+        panel.setFrame(rect, display: true)
         panel.orderFrontRegardless()
     }
 
@@ -254,10 +239,10 @@ struct LeftWing: View {
 
             if engine.isSessionActive {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(profilePhaseColor)
+                    .fill(phaseColor)
                     .frame(width: 2.5, height: height * 0.4)
-                    .shadow(color: profilePhaseColor, radius: 8)
-                    .shadow(color: profilePhaseColor.opacity(0.5), radius: 3)
+                    .shadow(color: phaseColor, radius: 8)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
                     .padding(.leading, 3)
                     .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
@@ -283,14 +268,8 @@ struct LeftWing: View {
         }
     }
 
-    /// プロファイルカラー × 状態: FLOW=明るい、DRIFT=暗い脈動、AWAY=gray
-    private var profilePhaseColor: Color {
-        let hue = engine.activeProfile.colorHue
-        switch engine.focusState?.phase {
-        case .flow: return Color(hue: hue, saturation: 0.7, brightness: 0.9)
-        case .drift: return Color(hue: hue, saturation: 0.5, brightness: 0.5)
-        case .away, nil: return .gray
-        }
+    private var phaseColor: Color {
+        profilePhaseColor(phase: engine.focusState?.phase, hue: engine.activeProfile.colorHue)
     }
 }
 
@@ -306,10 +285,10 @@ struct RightWing: View {
 
             if engine.isSessionActive {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(profilePhaseColor)
+                    .fill(phaseColor)
                     .frame(width: 2.5, height: height * 0.4)
-                    .shadow(color: profilePhaseColor, radius: 8)
-                    .shadow(color: profilePhaseColor.opacity(0.5), radius: 3)
+                    .shadow(color: phaseColor, radius: 8)
+                    .shadow(color: phaseColor.opacity(0.5), radius: 3)
                     .padding(.trailing, 3)
                     .animation(.easeInOut(duration: 0.8), value: engine.focusState?.phase)
             }
@@ -335,13 +314,8 @@ struct RightWing: View {
         }
     }
 
-    private var profilePhaseColor: Color {
-        let hue = engine.activeProfile.colorHue
-        switch engine.focusState?.phase {
-        case .flow: return Color(hue: hue, saturation: 0.7, brightness: 0.9)
-        case .drift: return Color(hue: hue, saturation: 0.5, brightness: 0.5)
-        case .away, nil: return .gray
-        }
+    private var phaseColor: Color {
+        profilePhaseColor(phase: engine.focusState?.phase, hue: engine.activeProfile.colorHue)
     }
 }
 
@@ -827,6 +801,23 @@ func formatCompactTime(_ interval: TimeInterval) -> String {
     let s = Int(interval) % 60
     if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
     return String(format: "%d:%02d", m, s)
+}
+
+/// プロファイルカラー × フェーズ → 表示色
+func profilePhaseColor(phase: FocusPhase?, hue: Double) -> Color {
+    switch phase {
+    case .flow: Color(hue: hue, saturation: 0.7, brightness: 0.9)
+    case .drift: Color(hue: hue, saturation: 0.5, brightness: 0.5)
+    case .away, nil: .gray
+    }
+}
+
+/// Ghost Teacherパネル位置計算
+func ghostPanelFrame(screenFrame: CGRect, safeTop: CGFloat, width: CGFloat = 280, height: CGFloat = 64) -> NSRect {
+    let topY = screenFrame.maxY - safeTop
+    let x = screenFrame.midX - width / 2
+    let y = topY - height - 6
+    return NSRect(x: x, y: y, width: width, height: height)
 }
 
 // MARK: - Visual Effect Background
