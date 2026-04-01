@@ -26,6 +26,7 @@ macOS native focus tracker. 一万時間の集中を計測する。
 swift build
 
 # .appバンドル生成 (カメラ権限・アクセシビリティ権限に必要)
+# 初回のみ自己署名証明書「Sitbone Dev」の作成が必要 (後述)
 make app
 
 # .appバンドルで起動
@@ -39,6 +40,43 @@ make coverage
 ```
 
 初回起動時にカメラ権限とアクセシビリティ権限のダイアログが表示される。両方許可すること。
+
+### コード署名の設定 (初回のみ)
+
+`make app`は「Sitbone Dev」という自己署名証明書でcodesignする。ad-hoc署名だとリビルドのたびにTCC権限（カメラ・アクセシビリティ）がリセットされるため。
+
+```bash
+# 1. 証明書を生成
+cat > /tmp/sitbone-cert.cfg <<'EOF'
+[ req ]
+default_bits = 2048
+distinguished_name = req_dn
+x509_extensions = codesign
+prompt = no
+[ req_dn ]
+CN = Sitbone Dev
+[ codesign ]
+keyUsage = digitalSignature
+extendedKeyUsage = codeSigning
+EOF
+
+openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem \
+  -days 3650 -nodes -config /tmp/sitbone-cert.cfg
+openssl pkcs12 -export -out /tmp/cert.p12 -inkey /tmp/key.pem \
+  -in /tmp/cert.pem -passout pass:tmp -legacy
+
+# 2. Keychainにインポート + 信頼
+security import /tmp/cert.p12 -k ~/Library/Keychains/login.keychain-db \
+  -P tmp -T /usr/bin/codesign
+security add-trusted-cert -d -r trustRoot -p codeSign \
+  -k ~/Library/Keychains/login.keychain-db /tmp/cert.pem
+
+# 3. 確認
+security find-identity -v -p codesigning  # "Sitbone Dev" が表示されればOK
+
+# 4. 一時ファイル削除
+rm -f /tmp/sitbone-cert.cfg /tmp/key.pem /tmp/cert.pem /tmp/cert.p12
+```
 
 ## Development
 

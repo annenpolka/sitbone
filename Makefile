@@ -69,10 +69,8 @@ app: compile
 	@cp $(BINARY) $(MACOS_DIR)/$(APP_NAME)
 	@cp -r Sources/Sitbone/Resources/Assets.xcassets $(RESOURCES)/ 2>/dev/null || true
 	@cp Sources/Sitbone/Info.plist $(CONTENTS)/Info.plist
-	@codesign --force --sign - $(APP_BUNDLE)
-	@tccutil reset Accessibility com.sitbone 2>/dev/null || true
-	@tccutil reset Camera com.sitbone 2>/dev/null || true
-	@echo "=== $(APP_BUNDLE) ready (TCC reset) ==="
+	@codesign --force --sign "Sitbone Dev" $(APP_BUNDLE)
+	@echo "=== $(APP_BUNDLE) ready ==="
 
 run: app
 	@open $(APP_BUNDLE)
