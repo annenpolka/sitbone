@@ -52,7 +52,7 @@ make test-ubsan    # Undefined Behavior Sanitizer
 make coverage-detail   # .build/logs/coverage.txt に出力
 ```
 
-GitHub Actions では `pull_request` と `main` への push ごとに `make compile`、`make lint`、`make test-unit` を実行する。
+GitHub Actions では `pull_request` と `main` への push ごとに `make lint` と `swift test` を実行する。
 
 ## Architecture
 

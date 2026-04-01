@@ -13,9 +13,9 @@ concurrency:
 
 jobs:
   verify:
-    name: Build Lint And Test
-    runs-on: macos-latest
-    timeout-minutes: 30
+    name: Lint And Test
+    runs-on: macos-15
+    timeout-minutes: 20
     permissions:
       contents: read
 
@@ -23,31 +23,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-
-      - name: Cache SwiftPM
-        uses: actions/cache@v5
-        with:
-          path: |
-            .build
-            ~/.swiftpm
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Makefile', '.swiftlint.yml', 'Sources/**/*.swift', 'Tests/**/*.swift') }}
-          restore-keys: |
-            ${{ runner.os }}-swiftpm-
-
-      - name: Install SwiftLint
-        run: |
-          if ! command -v swiftlint >/dev/null 2>&1; then
-            brew install swiftlint
-          fi
-
       - name: Show Swift Version
         run: swift --version
 
-      - name: Compile
-        run: make compile
+      - name: Show SwiftLint Version
+        run: swiftlint version
 
       - name: Lint
         run: make lint
