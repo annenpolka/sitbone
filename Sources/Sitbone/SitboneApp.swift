@@ -68,24 +68,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 engine.startSession()
             }
 
-            // システムスリープ/ウェイク検知 (ADR-0015)
+            // システムスリープ/ウェイク + 画面オフ/オン検知 (ADR-0015)
             let sleepEngine = engine
-            NSWorkspace.shared.notificationCenter.addObserver(
-                forName: NSWorkspace.willSleepNotification,
-                object: nil,
-                queue: .main
-            ) { _ in
-                Task { @MainActor in
-                    sleepEngine.handleSystemSleep()
+            for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
+                NSWorkspace.shared.notificationCenter.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    Task { @MainActor in
+                        sleepEngine.handleSystemSleep()
+                    }
                 }
             }
-            NSWorkspace.shared.notificationCenter.addObserver(
-                forName: NSWorkspace.didWakeNotification,
-                object: nil,
-                queue: .main
-            ) { _ in
-                Task { @MainActor in
-                    sleepEngine.handleSystemWake()
+            for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+                NSWorkspace.shared.notificationCenter.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    Task { @MainActor in
+                        sleepEngine.handleSystemWake()
+                    }
                 }
             }
         }

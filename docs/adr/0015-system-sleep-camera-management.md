@@ -1,4 +1,4 @@
-# 0015: システムスリープ時のカメラ停止と時間計測保護
+# 0015: システムスリープ/画面オフ時のカメラ停止と時間計測保護
 
 - **Status**: proposed
 - **Date**: 2026-04-02
@@ -6,14 +6,21 @@
 
 ## Context
 
-Macがスリープすると2つの問題が発生する:
+Macがスリープまたは画面オフすると2つの問題が発生する:
 
-1. **カメラが停止されない**: AVCaptureSessionが明示的に停止されず、スリープ中もリソースを保持する。ウェイク後にセッションが不定状態になる可能性がある。
+1. **カメラが停止されない**: AVCaptureSessionが明示的に停止されず、スリープ/画面オフ中もリソースを保持する。復帰後にセッションが不定状態になる可能性がある。
 2. **時間計測の膨張**: `advanceElapsed`が`lastTickTime`からの壁時計差分を計算するため、30分のスリープ後に最初のtickで約1800秒が`totalElapsed`/`focusedElapsed`に加算される。
+
+画面オフはシステムスリープとは独立して発生する（省エネ設定によるディスプレイスリープ、ホットコーナーなど）。
 
 ## Decision
 
-`SessionEngine`に`handleSystemSleep()`と`handleSystemWake()`を追加する。AppDelegateで`NSWorkspace.willSleepNotification`/`didWakeNotification`を購読し、これらのメソッドを呼び出す。
+`SessionEngine`に`handleSystemSleep()`と`handleSystemWake()`を追加する。AppDelegateで以下の4つの通知を購読し、これらのメソッドを呼び出す:
+
+- `willSleepNotification` / `didWakeNotification` — システムスリープ/ウェイク
+- `screensDidSleepNotification` / `screensDidWakeNotification` — 画面オフ/オン
+
+`handleSystemSleep()`は冪等であり、複数回呼ばれても安全（画面オフ→システムスリープの連続発火に対応）。
 
 ## Options Considered
 
