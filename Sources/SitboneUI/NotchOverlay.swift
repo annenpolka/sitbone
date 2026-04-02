@@ -76,6 +76,7 @@ public final class NotchOverlayController {
     private var ghostTeacherCancellable: AnyCancellable?
     private var hoverPollTimer: Timer?
     private let hoverState = HoverState()
+    private var screenChangeObserver: Any?
 
     public init(engine: SessionEngine) {
         self.engine = engine
@@ -92,12 +93,17 @@ public final class NotchOverlayController {
         orderPanelsFront()
         startHoverPolling()
         observeGhostTeacherChanges()
+        observeScreenParameterChanges()
     }
 
     public func hide() {
         hoverPollTimer?.invalidate()
         hoverPollTimer = nil
         ghostTeacherCancellable?.cancel()
+        if let observer = screenChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            screenChangeObserver = nil
+        }
         leftPanel?.close(); rightPanel?.close(); expandPanel?.close(); ghostPanel?.close()
         leftPanel = nil; rightPanel = nil; expandPanel = nil; ghostPanel = nil
     }
@@ -322,6 +328,53 @@ public final class NotchOverlayController {
         host.layer?.backgroundColor = .clear
         panel.contentView = host
         return panel
+    }
+}
+
+// MARK: - Screen Change Handling
+
+extension NotchOverlayController {
+    fileprivate func observeScreenParameterChanges() {
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.repositionAllPanels() }
+        }
+    }
+
+    fileprivate func repositionAllPanels() {
+        let geometry = NotchGeometry.detect()
+        self.geo = geometry
+
+        let visibleWidth: CGFloat = 14
+        let overlapInto: CGFloat = 16
+        let totalWidth = visibleWidth + overlapInto
+
+        leftPanel?.setFrame(NSRect(
+            x: geometry.notchLeft - visibleWidth,
+            y: geometry.notchBottomY,
+            width: totalWidth,
+            height: geometry.notchHeight
+        ), display: true)
+
+        rightPanel?.setFrame(NSRect(
+            x: geometry.notchRight - overlapInto,
+            y: geometry.notchBottomY,
+            width: totalWidth,
+            height: geometry.notchHeight
+        ), display: true)
+
+        let notchWidth = geometry.notchRight - geometry.notchLeft
+        let expandHeight: CGFloat = 350
+        expandPanel?.setFrame(NSRect(
+            x: geometry.notchLeft,
+            y: geometry.notchBottomY - expandHeight,
+            width: notchWidth,
+            height: expandHeight + geometry.notchHeight
+        ), display: true)
+
+        repositionGhostPanel()
     }
 }
 
