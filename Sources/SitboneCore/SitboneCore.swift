@@ -334,6 +334,41 @@ public final class SessionEngine: ObservableObject {
         currentTimelinePhase = nil
         currentPhaseDuration = 0
 
+        startTickLoop()
+    }
+
+    // MARK: - システムスリープ/ウェイク (ADR-0015)
+
+    /// スリープ前にカメラ停止 + tickループ停止
+    public func handleSystemSleep() {
+        guard isSessionActive else { return }
+        // スリープ境界までの経過時間を確定
+        if let state = focusState {
+            let now = deps.clock.now
+            let delta = advanceElapsed(phase: state.phase, now: now)
+            updateTimeline(phase: state.phase, delta: delta)
+            lastTickTime = now
+        }
+        // カメラ停止
+        if let arbiter = deps.presenceDetector as? PresenceArbiter {
+            arbiter.stopCamera()
+        }
+        // tickループ停止
+        tickTask?.cancel()
+        tickTask = nil
+    }
+
+    /// ウェイク後にlastTickTimeリセット + tickループ再開
+    public func handleSystemWake() {
+        guard isSessionActive else { return }
+        // スリープ時間を破棄するためlastTickTimeをリセット
+        lastTickTime = deps.clock.now
+        // tickループ再開（カメラは遅延起動で自動復帰）
+        startTickLoop()
+    }
+
+    private func startTickLoop() {
+        tickTask?.cancel()
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))

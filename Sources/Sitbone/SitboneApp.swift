@@ -67,6 +67,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if autoStart {
                 engine.startSession()
             }
+
+            // システムスリープ/ウェイク検知 (ADR-0015)
+            let sleepEngine = engine
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.willSleepNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    sleepEngine.handleSystemSleep()
+                }
+            }
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    sleepEngine.handleSystemWake()
+                }
+            }
         }
     }
 
