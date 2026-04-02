@@ -67,6 +67,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if autoStart {
                 engine.startSession()
             }
+
+            observeSleepWake(engine: engine)
+        }
+    }
+
+    /// システムスリープ/ウェイク + 画面オフ/オン検知 (ADR-0015)
+    @MainActor
+    private func observeSleepWake(engine: SessionEngine) {
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in
+                Task { @MainActor in engine.handleSystemSleep() }
+            }
+        }
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in
+                Task { @MainActor in engine.handleSystemWake() }
+            }
         }
     }
 

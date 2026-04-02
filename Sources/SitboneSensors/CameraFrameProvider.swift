@@ -239,3 +239,17 @@ public final class MockCameraFrameProvider: CameraFrameProviderProtocol, @unchec
 
     public func captureFrame() async -> CGImage? { frame }
 }
+
+// MARK: - Spy (テスト用: stopCapture呼び出しを記録)
+
+public final class SpyCameraFrameProvider: CameraFrameProviderProtocol, @unchecked Sendable {
+    public var frame: CGImage?
+    public private(set) var stopCaptureCallCount: Int = 0
+
+    public init(frame: CGImage? = nil) {
+        self.frame = frame
+    }
+
+    public func captureFrame() async -> CGImage? { frame }
+    public func stopCapture() { stopCaptureCallCount += 1 }
+}
