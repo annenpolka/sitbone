@@ -172,8 +172,10 @@ public final class NotchOverlayController {
         ghostTeacherCancellable = engine.$pendingGhostTeacher
             .receive(on: RunLoop.main)
             .sink { [weak self] site in
-                guard site != nil else { return }
-                self?.repositionGhostPanel()
+                if site != nil {
+                    self?.repositionGhostPanel()
+                }
+                self?.ghostPanel?.ignoresMouseEvents = site == nil
             }
     }
 
@@ -194,7 +196,7 @@ public final class NotchOverlayController {
             }),
             interactive: true
         )
-        ghostTeacherPanel.ignoresMouseEvents = false
+        ghostTeacherPanel.ignoresMouseEvents = engine.pendingGhostTeacher == nil
         self.ghostPanel = ghostTeacherPanel
     }
 
