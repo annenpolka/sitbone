@@ -491,6 +491,12 @@ public final class SessionEngine: ObservableObject {
         let browserSiteKey = BrowserSiteIdentity.canonicalSiteKey(
             urlString: deps.windowMonitor.frontmostWindowURL()
         )
+
+        // ADR-0016: 同一tickで両方取れた場合にエイリアスを記録
+        if let domain = browserSiteKey, let titleSite = resolution.site {
+            siteObserver.registerAlias(domain: domain, titleSite: titleSite)
+        }
+
         let site = preferredBrowserSiteKey(
             browserSiteKey: browserSiteKey,
             titleResolvedSite: resolution.site
@@ -684,17 +690,18 @@ public final class SessionEngine: ObservableObject {
         browserSiteKey: String?,
         titleResolvedSite: String?
     ) -> String? {
-        if let titleResolvedSite,
-           siteObserver.classification(for: titleResolvedSite) != nil {
-            return titleResolvedSite
-        }
-
-        if let browserSiteKey,
-           siteObserver.classification(for: browserSiteKey) != nil {
+        // ADR-0016: URLドメインが取得できれば常に優先
+        if let browserSiteKey {
             return browserSiteKey
         }
 
-        return browserSiteKey ?? titleResolvedSite
+        // URL取得失敗時: エイリアス経由でドメインキーに解決を試みる
+        if let titleSite = titleResolvedSite,
+           let domain = siteObserver.domainForAlias(titleSite) {
+            return domain
+        }
+
+        return titleResolvedSite
     }
 
     /// 直近のセッション記録（テスト・UI用）
@@ -795,9 +802,21 @@ public final class SessionEngine: ObservableObject {
     }
 
     private func loadClassificationsForProfile(_ profile: SessionProfile) {
-        let url = profileDir(for: profile).appendingPathComponent("classifications.json")
-        guard let data = try? Data(contentsOf: url) else { return }
-        try? siteObserver.loadJSON(data)
+        let dir = profileDir(for: profile)
+        let url = dir.appendingPathComponent("classifications.json")
+        if let data = try? Data(contentsOf: url) {
+            try? siteObserver.loadJSON(data)
+        }
+        // ADR-0016: エイリアスも読み込み + マイグレーション
+        let aliasURL = dir.appendingPathComponent("aliases.json")
+        if let aliasData = try? Data(contentsOf: aliasURL) {
+            try? siteObserver.loadAliasesJSON(aliasData)
+            // タイトル由来キーの分類をドメインキーに移行
+            let migrated = siteObserver.migrateClassificationsToAliasedDomains()
+            if migrated > 0 {
+                saveClassificationsForActiveProfile()
+            }
+        }
     }
 
     /// 旧classifications.jsonをdefaultプロファイルにマイグレーション
@@ -860,9 +879,16 @@ public final class SessionEngine: ObservableObject {
     }
 
     private func saveClassificationsForActiveProfile() {
-        guard let data = try? siteObserver.toJSON() else { return }
-        let url = profileDir(for: activeProfile).appendingPathComponent("classifications.json")
-        try? data.write(to: url)
+        let dir = profileDir(for: activeProfile)
+        if let data = try? siteObserver.toJSON() {
+            let url = dir.appendingPathComponent("classifications.json")
+            try? data.write(to: url)
+        }
+        // ADR-0016: エイリアスも保存
+        if let aliasData = try? siteObserver.aliasesToJSON() {
+            let aliasURL = dir.appendingPathComponent("aliases.json")
+            try? aliasData.write(to: aliasURL)
+        }
     }
 
     /// 累積データをロード

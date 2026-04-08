@@ -140,9 +140,9 @@ struct SessionEngineExtendedTests {
         #expect(engine.pendingGhostTeacher == "github.com")
     }
 
-    @Test("既存の手動分類があればタイトル側のサイト名を優先する")
+    @Test("ADR-0016: URLドメインが取得できればタイトル由来より優先する")
     @MainActor
-    func performTickPrefersExistingTitleClassification() async {
+    func performTickPrefersURLDomainOverTitle() async {
         let clock = FixedClock()
         let windowMonitor = MockWindowMonitor(appName: "Google Chrome")
         windowMonitor.windowTitle = "GitHub - annenpolka/sitbone - Google Chrome"
@@ -156,13 +156,13 @@ struct SessionEngineExtendedTests {
         )
         let engine = SessionEngine(deps: deps)
         engine.persistenceEnabled = false
-        engine.classifySite("GitHub", as: .flow)
+        engine.classifySite("github.com", as: .flow)
         engine.startSession()
 
         clock.advance(by: 1)
         await engine.performTickForTest()
 
-        #expect(engine.currentSite == "GitHub")
+        #expect(engine.currentSite == "github.com")
         #expect(engine.pendingGhostTeacher == nil)
     }
 

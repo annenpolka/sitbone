@@ -40,6 +40,8 @@ public final class SiteObserver: @unchecked Sendable {
     private var entries: [String: SiteEntry] = [:]
     /// ユーザーが明示的に分類したサイト (Ghost Teacher判定済み)
     private var userClassifications: [String: SiteSuggestion] = [:]
+    /// ADR-0016: タイトル由来サイト名 → URLドメインのエイリアス
+    private var titleToDomainAliases: [String: String] = [:]
     private let threshold: Double = 0.7
 
     public init() {}
@@ -78,9 +80,9 @@ public final class SiteObserver: @unchecked Sendable {
         entries[site] == nil && userClassifications[site] == nil
     }
 
-    /// ユーザーが未分類のサイトかどうか（観測はあるが分類がない）
+    /// ユーザーが未分類のサイトかどうか（エイリアス経由の分類も考慮）
     public func isUnclassified(_ site: String) -> Bool {
-        userClassifications[site] == nil
+        classification(for: site) == nil
     }
 
     /// ユーザーがサイトを明示的に分類（Ghost Teacherの回答）
@@ -92,17 +94,55 @@ public final class SiteObserver: @unchecked Sendable {
         }
     }
 
-    /// ユーザーの明示分類を取得
+    /// ユーザーの明示分類を取得（エイリアス経由でドメインキーも参照）
     public func classification(for site: String) -> SiteSuggestion? {
-        userClassifications[site]
+        if let direct = userClassifications[site] {
+            return direct
+        }
+        // ADR-0016: エイリアス経由でドメインキーの分類を参照
+        if let domain = titleToDomainAliases[site] {
+            return userClassifications[domain]
+        }
+        return nil
     }
 
-    /// 実効分類: ユーザー分類 > 自動サジェスト
+    /// 実効分類: ユーザー分類 > エイリアス経由 > 自動サジェスト
     public func effectiveClassification(for site: String) -> SiteSuggestion {
-        if let userClass = userClassifications[site] {
+        if let userClass = classification(for: site) {
             return userClass
         }
         return suggest(for: site)
+    }
+
+    // MARK: - ドメイン↔タイトルエイリアス（ADR-0016）
+
+    /// 同一tickで観測されたドメインとタイトルサイト名の対応を記録
+    public func registerAlias(domain: String, titleSite: String) {
+        guard domain != titleSite else { return }
+        titleToDomainAliases[titleSite] = domain
+    }
+
+    /// タイトルサイト名に対応するドメインキーを返す
+    public func domainForAlias(_ titleSite: String) -> String? {
+        titleToDomainAliases[titleSite]
+    }
+
+    /// エイリアスを使ってタイトル由来キーの分類をドメインキーに移行する
+    /// - Returns: 移行された件数
+    @discardableResult
+    public func migrateClassificationsToAliasedDomains() -> Int {
+        var count = 0
+        for (titleSite, domain) in titleToDomainAliases {
+            guard let titleClassification = userClassifications[titleSite] else { continue }
+            // ドメインキーに既に分類がある場合はスキップ
+            guard userClassifications[domain] == nil else { continue }
+            userClassifications[domain] = titleClassification
+            if entries[domain] == nil {
+                entries[domain] = SiteEntry()
+            }
+            count += 1
+        }
+        return count
     }
 
     // MARK: - セグメントマッチ（ADR-0010）
@@ -181,6 +221,20 @@ public final class SiteObserver: @unchecked Sendable {
         }
     }
 
+    // MARK: - エイリアス永続化（ADR-0016）
+
+    /// エイリアスを辞書形式でエクスポート（タイトル名 → ドメイン）
+    public func exportAliases() -> [String: String] {
+        titleToDomainAliases
+    }
+
+    /// 辞書形式からエイリアスをインポート
+    public func importAliases(_ data: [String: String]) {
+        for (titleSite, domain) in data {
+            titleToDomainAliases[titleSite] = domain
+        }
+    }
+
     /// JSONにシリアライズ
     public func toJSON() throws -> Data {
         try JSONSerialization.data(withJSONObject: exportClassifications(), options: .prettyPrinted)
@@ -192,5 +246,18 @@ public final class SiteObserver: @unchecked Sendable {
             return
         }
         importClassifications(dict)
+    }
+
+    /// エイリアスをJSONにシリアライズ
+    public func aliasesToJSON() throws -> Data {
+        try JSONSerialization.data(withJSONObject: exportAliases(), options: .prettyPrinted)
+    }
+
+    /// エイリアスをJSONからロード
+    public func loadAliasesJSON(_ data: Data) throws {
+        guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return
+        }
+        importAliases(dict)
     }
 }
