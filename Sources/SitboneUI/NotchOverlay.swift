@@ -77,6 +77,7 @@ public final class NotchOverlayController {
     private var hoverPollTimer: Timer?
     private let hoverState = HoverState()
     private var screenChangeObserver: Any?
+    private var keyMonitor: Any?
 
     public init(engine: SessionEngine) {
         self.engine = engine
@@ -100,6 +101,7 @@ public final class NotchOverlayController {
         hoverPollTimer?.invalidate()
         hoverPollTimer = nil
         ghostTeacherCancellable?.cancel()
+        removeKeyMonitor()
         if let observer = screenChangeObserver {
             NotificationCenter.default.removeObserver(observer)
             screenChangeObserver = nil
@@ -174,9 +176,34 @@ public final class NotchOverlayController {
             .sink { [weak self] site in
                 if site != nil {
                     self?.repositionGhostPanel()
+                    self?.installKeyMonitor()
+                } else {
+                    self?.removeKeyMonitor()
                 }
                 self?.ghostPanel?.ignoresMouseEvents = site == nil
             }
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let site = self.engine.pendingGhostTeacher else { return }
+            let bindings = self.engine.ghostTeacherKeyBindings
+            if event.matches(bindings.flow) {
+                withAnimation { self.engine.classifySite(site, as: .flow) }
+            } else if event.matches(bindings.drift) {
+                withAnimation { self.engine.classifySite(site, as: .drift) }
+            } else if event.matches(bindings.dismiss) {
+                withAnimation { self.engine.dismissGhostTeacher() }
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
     }
 
     /// Ghost Teacherパネルをフォーカスディスプレイの上端中央に配置
@@ -1096,5 +1123,19 @@ struct VisualEffectBackground: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
         view.material = material
         view.blendingMode = blendingMode
+    }
+}
+
+// MARK: - NSEvent + KeyBinding マッチング
+
+extension NSEvent {
+    /// KeyBindingの keyCode / modifierFlags と一致するか判定
+    func matches(_ binding: KeyBinding) -> Bool {
+        guard self.keyCode == binding.keyCode else { return false }
+        // 比較対象の修飾キーマスク（deviceIndependentFlagsMask相当）
+        let relevant: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
+        let eventMods = self.modifierFlags.intersection(relevant)
+        let bindingMods = NSEvent.ModifierFlags(rawValue: UInt(binding.modifierFlags)).intersection(relevant)
+        return eventMods == bindingMods
     }
 }

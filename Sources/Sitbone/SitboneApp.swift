@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine.loadProfiles()
             engine.loadClassifications()
             engine.loadCumulativeData()
+            engine.loadGhostTeacherKeyBindings()
 
             let controller = NotchOverlayController(engine: engine)
             self.notchController = controller

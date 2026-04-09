@@ -47,6 +47,7 @@ public struct MenuBarView: View {
             Divider()
             cameraToggle
             ghostTeacherDismissSetting
+            ghostTeacherKeyBindingsSection
             Divider()
             sessionToggle
             Divider()
@@ -301,6 +302,26 @@ public struct MenuBarView: View {
         }
     }
 
+    private var ghostTeacherKeyBindingsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Shortcuts")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            KeyBindingRow(
+                label: "FLOW",
+                binding: $engine.ghostTeacherKeyBindings.flow
+            )
+            KeyBindingRow(
+                label: "DRIFT",
+                binding: $engine.ghostTeacherKeyBindings.drift
+            )
+            KeyBindingRow(
+                label: "Dismiss",
+                binding: $engine.ghostTeacherKeyBindings.dismiss
+            )
+        }
+    }
+
     private var sessionToggle: some View {
         Button {
             if engine.isSessionActive {
@@ -416,4 +437,59 @@ public func menuBarIcon(phase: FocusPhase?) -> NSImage {
     }
     template.isTemplate = true
     return template
+}
+
+// MARK: - Key Binding Recorder
+
+struct KeyBindingRow: View {
+    let label: String
+    @Binding var binding: KeyBinding
+    @State private var isRecording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .frame(width: 50, alignment: .leading)
+            Spacer()
+            Button {
+                if isRecording {
+                    stopRecording()
+                } else {
+                    startRecording()
+                }
+            } label: {
+                Text(isRecording ? "Press key…" : binding.displayString)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(isRecording ? .orange : .primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(isRecording ? Color.orange.opacity(0.15) : Color.secondary.opacity(0.1))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func startRecording() {
+        isRecording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let relevant: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
+            let mods = event.modifierFlags.intersection(relevant)
+            binding = KeyBinding(keyCode: event.keyCode, modifierFlags: UInt(mods.rawValue))
+            stopRecording()
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        isRecording = false
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        monitor = nil
+    }
 }

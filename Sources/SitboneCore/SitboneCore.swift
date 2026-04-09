@@ -293,6 +293,11 @@ public final class SessionEngine: ObservableObject {
     /// Ghost Teacherの自動消去までの秒数（0で無効）
     @Published public var ghostTeacherAutoDismissSeconds: Double = 10
 
+    /// Ghost Teacherのキーバインド設定
+    @Published public var ghostTeacherKeyBindings = GhostTeacherKeyBindings() {
+        didSet { saveGhostTeacherKeyBindings() }
+    }
+
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
 
@@ -795,6 +800,26 @@ public final class SessionEngine: ObservableObject {
         guard let data = try? JSONEncoder().encode(profiles) else { return }
         try? data.write(to: profilesURL)
         cleanupLegacyPersistenceArtifacts()
+    }
+
+    // Ghost Teacher キーバインド
+
+    private var keyBindingsURL: URL {
+        persistenceRoot.appendingPathComponent("keybindings.json")
+    }
+
+    public func loadGhostTeacherKeyBindings() {
+        guard persistenceEnabled else { return }
+        guard let data = try? Data(contentsOf: keyBindingsURL),
+              let decoded = try? JSONDecoder().decode(GhostTeacherKeyBindings.self, from: data)
+        else { return }
+        ghostTeacherKeyBindings = decoded
+    }
+
+    private func saveGhostTeacherKeyBindings() {
+        guard persistenceEnabled else { return }
+        guard let data = try? JSONEncoder().encode(ghostTeacherKeyBindings) else { return }
+        try? data.write(to: keyBindingsURL)
     }
 
     // プロファイル別分類
