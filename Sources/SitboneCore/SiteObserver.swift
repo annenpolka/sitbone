@@ -46,9 +46,38 @@ public final class SiteObserver: @unchecked Sendable {
 
     public init() {}
 
+    private func canonicalSite(for site: String) -> String {
+        titleToDomainAliases[site] ?? site
+    }
+
+    @discardableResult
+    private func mergeAliasedState(titleSite: String, into domain: String) -> Int {
+        if let titleEntry = entries.removeValue(forKey: titleSite) {
+            var domainEntry = entries[domain] ?? SiteEntry()
+            domainEntry.totalTime += titleEntry.totalTime
+            domainEntry.flowTime += titleEntry.flowTime
+            entries[domain] = domainEntry
+        }
+
+        guard let titleClassification = userClassifications.removeValue(forKey: titleSite) else {
+            return 0
+        }
+
+        if userClassifications[domain] == nil {
+            userClassifications[domain] = titleClassification
+            if entries[domain] == nil {
+                entries[domain] = SiteEntry()
+            }
+            return 1
+        }
+
+        return 0
+    }
+
     // MARK: - 記録
 
     public func record(site: String, phase: FocusPhase, duration: TimeInterval) {
+        let site = canonicalSite(for: site)
         var entry = entries[site] ?? SiteEntry()
         entry.totalTime += duration
         if phase == .flow {
@@ -58,12 +87,13 @@ public final class SiteObserver: @unchecked Sendable {
     }
 
     public func entry(for site: String) -> SiteEntry? {
-        entries[site]
+        entries[canonicalSite(for: site)]
     }
 
     // MARK: - 自動サジェスト
 
     public func suggest(for site: String) -> SiteSuggestion {
+        let site = canonicalSite(for: site)
         guard let entry = entries[site], entry.totalTime > 0 else {
             return .undecided
         }
@@ -77,7 +107,8 @@ public final class SiteObserver: @unchecked Sendable {
 
     /// 初めて見るサイトかどうか（観測データもユーザー分類もない）
     public func isNewSite(_ site: String) -> Bool {
-        entries[site] == nil && userClassifications[site] == nil
+        let site = canonicalSite(for: site)
+        return entries[site] == nil && userClassifications[site] == nil
     }
 
     /// ユーザーが未分類のサイトかどうか（エイリアス経由の分類も考慮）
@@ -87,6 +118,7 @@ public final class SiteObserver: @unchecked Sendable {
 
     /// ユーザーがサイトを明示的に分類（Ghost Teacherの回答）
     public func classify(site: String, as classification: SiteSuggestion) {
+        let site = canonicalSite(for: site)
         userClassifications[site] = classification
         // 観測データがなければ初期エントリを作成
         if entries[site] == nil {
@@ -96,12 +128,13 @@ public final class SiteObserver: @unchecked Sendable {
 
     /// ユーザーの明示分類を取得（エイリアス経由でドメインキーも参照）
     public func classification(for site: String) -> SiteSuggestion? {
-        if let direct = userClassifications[site] {
+        let canonical = canonicalSite(for: site)
+        if let direct = userClassifications[canonical] {
             return direct
         }
-        // ADR-0016: エイリアス経由でドメインキーの分類を参照
-        if let domain = titleToDomainAliases[site] {
-            return userClassifications[domain]
+        // エイリアス構築前の旧データもまだ残っていれば参照する
+        if canonical != site {
+            return userClassifications[site]
         }
         return nil
     }
@@ -120,6 +153,7 @@ public final class SiteObserver: @unchecked Sendable {
     public func registerAlias(domain: String, titleSite: String) {
         guard domain != titleSite else { return }
         titleToDomainAliases[titleSite] = domain
+        mergeAliasedState(titleSite: titleSite, into: domain)
     }
 
     /// タイトルサイト名に対応するドメインキーを返す
@@ -133,14 +167,7 @@ public final class SiteObserver: @unchecked Sendable {
     public func migrateClassificationsToAliasedDomains() -> Int {
         var count = 0
         for (titleSite, domain) in titleToDomainAliases {
-            guard let titleClassification = userClassifications[titleSite] else { continue }
-            // ドメインキーに既に分類がある場合はスキップ
-            guard userClassifications[domain] == nil else { continue }
-            userClassifications[domain] = titleClassification
-            if entries[domain] == nil {
-                entries[domain] = SiteEntry()
-            }
-            count += 1
+            count += mergeAliasedState(titleSite: titleSite, into: domain)
         }
         return count
     }

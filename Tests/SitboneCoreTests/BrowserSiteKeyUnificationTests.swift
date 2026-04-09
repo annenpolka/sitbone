@@ -141,6 +141,52 @@ struct BrowserSiteKeyUnificationTests {
         #expect(engine.currentSite == "zenn.dev")
     }
 
+    @Test("タイトル由来で先に観測されたサイトは、後からURLが取れたらドメインキーへ統合される")
+    @MainActor
+    func titleFallbackObservationIsMergedIntoDomainWhenAliasIsLearned() async {
+        let monitor = MockWindowMonitor(appName: "Google Chrome")
+        monitor.windowTitle = "記事 - Zenn - Google Chrome"
+        monitor.urlString = nil
+
+        let engine = makeEngine(monitor: monitor)
+
+        // 1tick目: URL取得失敗でタイトル由来キーを観測
+        await engine.performTickForTest()
+        #expect(engine.currentSite == "Zenn")
+
+        // 2tick目: URL取得成功でドメインが判明
+        monitor.urlString = "https://zenn.dev/articles/123"
+        await engine.performTickForTest()
+
+        let sites = Set(engine.siteObserver.allSuggestions().map(\.site))
+        #expect(engine.currentSite == "zenn.dev")
+        #expect(sites == Set(["zenn.dev"]))
+    }
+
+    @Test("タイトル由来で先に分類されたサイトは、後からURLが取れたらドメイン分類へ統合される")
+    @MainActor
+    func titleFallbackClassificationIsMergedIntoDomainWhenAliasIsLearned() async {
+        let monitor = MockWindowMonitor(appName: "Google Chrome")
+        monitor.windowTitle = "記事 - Zenn - Google Chrome"
+        monitor.urlString = nil
+
+        let engine = makeEngine(monitor: monitor)
+
+        // 1tick目: URL取得失敗でタイトル由来キーを分類
+        await engine.performTickForTest()
+        engine.classifySite("Zenn", as: .flow)
+
+        // 2tick目: URL取得成功でドメインが判明
+        monitor.urlString = "https://zenn.dev/articles/123"
+        await engine.performTickForTest()
+
+        let classifications = engine.siteObserver.exportClassifications()
+        #expect(engine.currentSite == "zenn.dev")
+        #expect(engine.pendingGhostTeacher == nil)
+        #expect(classifications["zenn.dev"] == "flow")
+        #expect(classifications["Zenn"] == nil)
+    }
+
     @Test("1ドメインに複数のタイトル名エイリアスを持てる")
     @MainActor
     func multipleTitleAliasesForOneDomain() async {
@@ -171,16 +217,21 @@ struct BrowserSiteKeyUnificationTests {
         observer.classify(site: "Zenn", as: .flow)
         observer.classify(site: "YouTube", as: .drift)
 
-        // エイリアスが蓄積されている
-        observer.registerAlias(domain: "zenn.dev", titleSite: "Zenn")
-        observer.registerAlias(domain: "youtube.com", titleSite: "YouTube")
+        // ロード済みエイリアスを想定
+        observer.importAliases([
+            "Zenn": "zenn.dev",
+            "YouTube": "youtube.com"
+        ])
 
         // マイグレーション実行
         let migrated = observer.migrateClassificationsToAliasedDomains()
+        let exported = observer.exportClassifications()
 
         // ドメインキーに分類が移行されている
         #expect(observer.classification(for: "zenn.dev") == .flow)
         #expect(observer.classification(for: "youtube.com") == .drift)
+        #expect(exported["Zenn"] == nil)
+        #expect(exported["YouTube"] == nil)
 
         // 移行された件数
         #expect(migrated == 2)
@@ -193,12 +244,14 @@ struct BrowserSiteKeyUnificationTests {
         // ドメインキーとタイトルキー両方に分類がある
         observer.classify(site: "zenn.dev", as: .drift)
         observer.classify(site: "Zenn", as: .flow)  // タイトル由来は異なる分類
-        observer.registerAlias(domain: "zenn.dev", titleSite: "Zenn")
+        observer.importAliases(["Zenn": "zenn.dev"])
 
         let migrated = observer.migrateClassificationsToAliasedDomains()
+        let exported = observer.exportClassifications()
 
         // ドメインキーの分類は上書きされない
         #expect(observer.classification(for: "zenn.dev") == .drift)
+        #expect(exported["Zenn"] == nil)
         #expect(migrated == 0)
     }
 
