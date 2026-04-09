@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine.loadClassifications()
             engine.loadCumulativeData()
             engine.loadGhostTeacherKeyBindings()
+            engine.loadDriftSoundSetting()
 
             let controller = NotchOverlayController(engine: engine)
             self.notchController = controller
@@ -60,9 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let autoStart = CommandLine.arguments.contains("--auto-start")
             #endif
 
-            // DRIFT効果音 (ADR-0007)
-            engine.onDriftEntered = {
-                NSSound(named: "Tink")?.play()
+            // DRIFT効果音 (ADR-0007, ADR-0017)
+            engine.onDriftEntered = { [weak engine] in
+                guard let name = engine?.driftSoundName else { return }
+                NSSound(named: NSSound.Name(name))?.play()
             }
 
             if autoStart {

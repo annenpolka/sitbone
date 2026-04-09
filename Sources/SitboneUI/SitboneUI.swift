@@ -46,6 +46,7 @@ public struct MenuBarView: View {
             profileSection
             Divider()
             cameraToggle
+            driftSoundPicker
             ghostTeacherDismissSetting
             ghostTeacherKeyBindingsSection
             Divider()
@@ -281,6 +282,37 @@ public struct MenuBarView: View {
         }
         .toggleStyle(.switch)
         .controlSize(.mini)
+    }
+
+    private static let driftSoundOptions = [
+        "Blow", "Bottle", "Frog", "Funk", "Glass",
+        "Hero", "Morse", "Ping", "Pop", "Purr",
+        "Sosumi", "Submarine", "Tink",
+    ]
+
+    private var driftSoundBinding: Binding<String> {
+        Binding(
+            get: { engine.driftSoundName ?? "" },
+            set: { engine.driftSoundName = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    private var driftSoundPicker: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "speaker.wave.2")
+                .font(.caption)
+            Text("Drift sound")
+                .font(.caption)
+            Spacer()
+            Picker("", selection: driftSoundBinding) {
+                Text("Off").tag("")
+                ForEach(Self.driftSoundOptions, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
     }
 
     private var ghostTeacherDismissSetting: some View {

@@ -6,6 +6,12 @@ public import Combine
 public import SitboneData
 public import SitboneSensors
 
+// MARK: - DriftSoundSetting (ADR-0017)
+
+struct DriftSoundSetting: Codable {
+    var soundName: String?
+}
+
 // MARK: - FocusState (不正な遷移を型で排除)
 
 public enum FocusState: Sendable, Equatable {
@@ -296,6 +302,11 @@ public final class SessionEngine: ObservableObject {
     /// Ghost Teacherのキーバインド設定
     @Published public var ghostTeacherKeyBindings = GhostTeacherKeyBindings() {
         didSet { saveGhostTeacherKeyBindings() }
+    }
+
+    /// DRIFT遷移時の効果音名（nilで無効） (ADR-0017)
+    @Published public var driftSoundName: String? = "Tink" {
+        didSet { saveDriftSoundSetting() }
     }
 
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
@@ -820,6 +831,27 @@ public final class SessionEngine: ObservableObject {
         guard persistenceEnabled else { return }
         guard let data = try? JSONEncoder().encode(ghostTeacherKeyBindings) else { return }
         try? data.write(to: keyBindingsURL)
+    }
+
+    // DRIFT効果音設定 (ADR-0017)
+
+    private var driftSoundURL: URL {
+        persistenceRoot.appendingPathComponent("drift-sound.json")
+    }
+
+    public func loadDriftSoundSetting() {
+        guard persistenceEnabled else { return }
+        guard let data = try? Data(contentsOf: driftSoundURL),
+              let decoded = try? JSONDecoder().decode(DriftSoundSetting.self, from: data)
+        else { return }
+        driftSoundName = decoded.soundName
+    }
+
+    private func saveDriftSoundSetting() {
+        guard persistenceEnabled else { return }
+        let setting = DriftSoundSetting(soundName: driftSoundName)
+        guard let data = try? JSONEncoder().encode(setting) else { return }
+        try? data.write(to: driftSoundURL)
     }
 
     // プロファイル別分類
