@@ -290,6 +290,9 @@ public final class SessionEngine: ObservableObject {
         }
     }
 
+    /// Ghost Teacherの自動消去までの秒数（0で無効）
+    @Published public var ghostTeacherAutoDismissSeconds: Double = 10
+
     /// FLOW→DRIFT遷移時のコールバック (ADR-0007: 効果音用)
     public var onDriftEntered: (() -> Void)?
 

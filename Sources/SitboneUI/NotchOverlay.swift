@@ -937,6 +937,7 @@ struct GhostTeacherBanner: View {
     @ObservedObject var engine: SessionEngine
     var onReposition: (() -> Void)?
     @State private var visible = false
+    @State private var autoDismissTask: Task<Void, Never>?
 
     var body: some View {
         VStack {
@@ -952,6 +953,7 @@ struct GhostTeacherBanner: View {
                     Spacer(minLength: 0)
 
                     Button {
+                        cancelAutoDismiss()
                         withAnimation { engine.classifySite(site, as: .flow) }
                     } label: {
                         Text("FLOW")
@@ -965,6 +967,7 @@ struct GhostTeacherBanner: View {
                     .buttonStyle(.plain)
 
                     Button {
+                        cancelAutoDismiss()
                         withAnimation { engine.classifySite(site, as: .drift) }
                     } label: {
                         Text("DRIFT")
@@ -978,6 +981,7 @@ struct GhostTeacherBanner: View {
                     .buttonStyle(.plain)
 
                     Button {
+                        cancelAutoDismiss()
                         withAnimation { engine.dismissGhostTeacher() }
                     } label: {
                         Image(systemName: "xmark")
@@ -999,6 +1003,7 @@ struct GhostTeacherBanner: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         visible = true
                     }
+                    scheduleAutoDismiss()
                 }
                 .onChange(of: engine.pendingGhostTeacher) { _, newSite in
                     if newSite != nil {
@@ -1008,11 +1013,33 @@ struct GhostTeacherBanner: View {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.15)) {
                             visible = true
                         }
+                        scheduleAutoDismiss()
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func scheduleAutoDismiss() {
+        cancelAutoDismiss()
+        let delay = engine.ghostTeacherAutoDismissSeconds
+        guard delay > 0 else { return }
+        autoDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                visible = false
+            }
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            engine.dismissGhostTeacher()
+        }
+    }
+
+    private func cancelAutoDismiss() {
+        autoDismissTask?.cancel()
+        autoDismissTask = nil
     }
 }
 

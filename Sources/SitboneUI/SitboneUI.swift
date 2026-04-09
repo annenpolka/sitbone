@@ -46,6 +46,7 @@ public struct MenuBarView: View {
             profileSection
             Divider()
             cameraToggle
+            ghostTeacherDismissSetting
             Divider()
             sessionToggle
             Divider()
@@ -279,6 +280,25 @@ public struct MenuBarView: View {
         }
         .toggleStyle(.switch)
         .controlSize(.mini)
+    }
+
+    private var ghostTeacherDismissSetting: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.caption)
+            Text("Auto-dismiss")
+                .font(.caption)
+            Spacer()
+            Picker("", selection: $engine.ghostTeacherAutoDismissSeconds) {
+                Text("Off").tag(0.0)
+                Text("5s").tag(5.0)
+                Text("10s").tag(10.0)
+                Text("15s").tag(15.0)
+                Text("30s").tag(30.0)
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
     }
 
     private var sessionToggle: some View {
