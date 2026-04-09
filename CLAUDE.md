@@ -182,35 +182,61 @@ DIフレームワークは使わない。型で全てを表現する。
 ### Makefile
 
 ```makefile
+SHELL        = /bin/bash
+.SHELLFLAGS  = -eo pipefail -c
+
 SCHEME       = Sitbone
 DESTINATION  = platform=macOS
+LOG_DIR      = .build/logs
+
+$(LOG_DIR):
+	@mkdir -p $(LOG_DIR)
+
+install-hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-commit .githooks/pre-push
 
 # Phase 1: コンパイラ検証
-compile:
-	swift build 2>&1 | tee .build/compile.log
+compile: | $(LOG_DIR)
+	swift build 2>&1 | tee $(LOG_DIR)/compile.log
 
 # Phase 2: 静的解析
-lint:
-	swiftlint lint --strict Sources/ Tests/ 2>&1 | tee .build/lint.log
+lint: | $(LOG_DIR)
+	swiftlint lint --strict Sources/ Tests/ 2>&1 | tee $(LOG_DIR)/lint.log
 
 # Phase 3: ユニットテスト
-test-unit:
-	swift test --parallel 2>&1 | tee .build/unit.log
+test-unit: | $(LOG_DIR)
+	swift test --parallel 2>&1 | tee $(LOG_DIR)/unit.log
 
 # Phase 4: Address Sanitizer
-test-asan:
+test-asan: | $(LOG_DIR)
 	xcodebuild test -scheme $(SCHEME) -destination "$(DESTINATION)" \
-		-enableAddressSanitizer YES 2>&1 | tee .build/asan.log
+		-enableAddressSanitizer YES 2>&1 | tee $(LOG_DIR)/asan.log
 
 # Phase 5: Thread Sanitizer
-test-tsan:
+test-tsan: | $(LOG_DIR)
 	xcodebuild test -scheme $(SCHEME) -destination "$(DESTINATION)" \
-		-enableThreadSanitizer YES 2>&1 | tee .build/tsan.log
+		-enableThreadSanitizer YES 2>&1 | tee $(LOG_DIR)/tsan.log
 
 # Phase 6: Undefined Behavior Sanitizer
-test-ubsan:
+test-ubsan: | $(LOG_DIR)
 	xcodebuild test -scheme $(SCHEME) -destination "$(DESTINATION)" \
-		-enableUndefinedBehaviorSanitizer YES 2>&1 | tee .build/ubsan.log
+		-enableUndefinedBehaviorSanitizer YES 2>&1 | tee $(LOG_DIR)/ubsan.log
+
+# テストカバレッジ
+coverage:
+	swift test --enable-code-coverage
+
+coverage-detail:
+	swift test --enable-code-coverage
+	@xcrun llvm-cov show ... > $(LOG_DIR)/coverage.txt
+
+# .app バンドル生成・実行
+app: compile
+	# .build/Sitbone.app を生成（codesign含む）
+
+run: app
+	@open .build/Sitbone.app
 
 # 全検証（早いフェーズで失敗すれば後続は不要）
 verify: compile lint test-unit test-asan test-tsan test-ubsan
