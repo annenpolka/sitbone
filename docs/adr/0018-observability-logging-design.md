@@ -247,27 +247,42 @@ FocusStateMachine自体はLoggerを呼ばず純粋関数性を保つ。副作用
 
 ### 9. TransitionReason: associated value enum
 
-理由と根拠値を型で一体として表現する:
+理由と根拠値を型で一体として表現する。`FocusStateMachine`の各分岐を精査した結果、必要なreasonは6ケース:
 
 ```swift
 public enum TransitionReason: Sendable {
-    case idleTimeoutPresent(idleSeconds: Double)   // FLOW→DRIFT (idle超過、在席)
-    case idleTimeoutAbsent(idleSeconds: Double)    // FLOW→AWAY (idle超過、不在)
-    case driftSite(site: String)                   // FLOW→DRIFT or DRIFT中のdriftサイト検知
-    case activityRecovered(idleSeconds: Double)    // DRIFT/AWAY→FLOW
-    case driftTimeout(driftDuration: Double)       // DRIFT→AWAY
+    /// FLOW→DRIFT: idleがdriftDelayを超え、presenceも検知できない（活動停止）
+    case idleAbsent(idleSeconds: Double)
+
+    /// FLOW→DRIFT: idleがawayDelayを超えても在席は検知（黙考シールドの打ち切り）
+    case prolongedIdleWithPresence(idleSeconds: Double)
+
+    /// FLOW→AWAY: idleがawayDelayを超え、presenceも検知できない（離席）
+    case desertion(idleSeconds: Double)
+
+    /// FLOW→DRIFT: 現在のサイト/アプリがdrift分類されている
+    case driftSite
+
+    /// DRIFT→FLOW or AWAY→FLOW: ユーザー活動が再開した
+    case activityRecovered(idleSeconds: Double)
+
+    /// DRIFT→AWAY: drift状態が長時間続き、presenceも検知できない
+    case driftTimeout(driftDuration: Double)
 
     var name: String {
         switch self {
-        case .idleTimeoutPresent: return "idle_timeout_present"
-        case .idleTimeoutAbsent:  return "idle_timeout_absent"
-        case .driftSite:          return "drift_site"
-        case .activityRecovered:  return "activity_recovered"
-        case .driftTimeout:       return "drift_timeout"
+        case .idleAbsent:                return "idle_absent"
+        case .prolongedIdleWithPresence: return "prolonged_idle_with_presence"
+        case .desertion:                 return "desertion"
+        case .driftSite:                 return "drift_site"
+        case .activityRecovered:         return "activity_recovered"
+        case .driftTimeout:              return "drift_timeout"
         }
     }
 }
 ```
+
+`driftSite`は associated value を持たない。サイト名はSessionEngineが`currentSite`/`currentApp`から既に保持しており、ログ出力時に別途展開できるため、`tick`引数を増やさずに済ませる。
 
 CLAUDE.mdの「不正な状態を型で表現不可能にする」原則に従い、reasonとcontext値の不整合を構文的に排除する。テストはpattern matchingで「どの遷移ケースでどのcontext値が含まれるか」を検証できる。
 

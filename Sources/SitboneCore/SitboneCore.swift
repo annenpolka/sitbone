@@ -3,6 +3,7 @@
 
 public import Foundation
 public import Combine
+import os
 public import SitboneData
 public import SitboneSensors
 
@@ -131,6 +132,43 @@ private struct TickSnapshot {
     let presence: PresenceReading
 }
 
+// MARK: - TransitionReason (ADR-0018)
+
+/// FocusState遷移の理由と根拠値。
+/// 遷移が発生したときのみnon-nilで返される。
+public enum TransitionReason: Sendable {
+    /// FLOW→DRIFT: idleがdriftDelayを超え、presenceも検知できない（活動停止）
+    case idleAbsent(idleSeconds: Double)
+
+    /// FLOW→DRIFT: idleがawayDelayを超えても在席は検知（黙考シールドの打ち切り）
+    case prolongedIdleWithPresence(idleSeconds: Double)
+
+    /// FLOW→AWAY: idleがawayDelayを超え、presenceも検知できない（離席）
+    case desertion(idleSeconds: Double)
+
+    /// FLOW→DRIFT: 現在のサイト/アプリがdrift分類されている
+    case driftSite
+
+    /// DRIFT→FLOW or AWAY→FLOW: ユーザー活動が再開した
+    case activityRecovered(idleSeconds: Double)
+
+    /// DRIFT→AWAY: drift状態が長時間続き、presenceも検知できない
+    case driftTimeout(driftDuration: Double)
+
+    public var name: String {
+        switch self {
+        case .idleAbsent:                return "idle_absent"
+        case .prolongedIdleWithPresence: return "prolonged_idle_with_presence"
+        case .desertion:                 return "desertion"
+        case .driftSite:                 return "drift_site"
+        case .activityRecovered:         return "activity_recovered"
+        case .driftTimeout:              return "drift_timeout"
+        }
+    }
+}
+
+public typealias TickResult = (state: FocusState, counters: Counters, reason: TransitionReason?)
+
 public final class FocusStateMachine: Sendable {
     private let deps: Dependencies
     private let thresholds: Thresholds
@@ -146,7 +184,7 @@ public final class FocusStateMachine: Sendable {
         current: FocusState,
         counters: Counters,
         siteIsDrift: Bool = false
-    ) async -> (state: FocusState, counters: Counters) {
+    ) async -> TickResult {
         let snapshot = TickSnapshot(
             now: deps.clock.now,
             idle: deps.idleDetector.secondsSinceLastEvent(),
@@ -180,26 +218,38 @@ public final class FocusStateMachine: Sendable {
         counters: Counters,
         snapshot: TickSnapshot,
         siteIsDrift: Bool
-    ) -> (state: FocusState, counters: Counters) {
+    ) -> TickResult {
         var updatedCounters = counters
 
         if siteIsDrift {
-            return (.drift(since: snapshot.now), updatedCounters)
+            return (.drift(since: snapshot.now), updatedCounters, .driftSite)
         }
         if snapshot.idle < thresholds.driftDelay {
-            return (current, updatedCounters)
+            return (current, updatedCounters, nil)
         }
         if snapshot.idle < thresholds.awayDelay {
             if snapshot.presence.status == .present {
-                return (current, updatedCounters)
+                return (current, updatedCounters, nil)
             }
-            return (.drift(since: snapshot.now), updatedCounters)
+            return (
+                .drift(since: snapshot.now),
+                updatedCounters,
+                .idleAbsent(idleSeconds: snapshot.idle)
+            )
         }
         if snapshot.presence.status == .present {
-            return (.drift(since: snapshot.now), updatedCounters)
+            return (
+                .drift(since: snapshot.now),
+                updatedCounters,
+                .prolongedIdleWithPresence(idleSeconds: snapshot.idle)
+            )
         }
         updatedCounters.deserted.increment()
-        return (.away(since: snapshot.now), updatedCounters)
+        return (
+            .away(since: snapshot.now),
+            updatedCounters,
+            .desertion(idleSeconds: snapshot.idle)
+        )
     }
 
     private func tickDrift(
@@ -207,7 +257,7 @@ public final class FocusStateMachine: Sendable {
         counters: Counters,
         snapshot: TickSnapshot,
         siteIsDrift: Bool
-    ) -> (state: FocusState, counters: Counters) {
+    ) -> TickResult {
         var updatedCounters = counters
 
         if siteIsDrift {
@@ -219,7 +269,11 @@ public final class FocusStateMachine: Sendable {
         }
         if snapshot.idle < thresholds.flowRecovery {
             updatedCounters.driftRecovered.increment()
-            return (.flow(since: snapshot.now), updatedCounters)
+            return (
+                .flow(since: snapshot.now),
+                updatedCounters,
+                .activityRecovered(idleSeconds: snapshot.idle)
+            )
         }
         return driftOrAwayState(
             current: current,
@@ -232,27 +286,35 @@ public final class FocusStateMachine: Sendable {
         current: FocusState,
         counters: Counters,
         snapshot: TickSnapshot
-    ) -> (state: FocusState, counters: Counters) {
+    ) -> TickResult {
         var updatedCounters = counters
         if snapshot.idle < thresholds.flowRecovery {
             updatedCounters.awayRecovered.increment()
-            return (.flow(since: snapshot.now), updatedCounters)
+            return (
+                .flow(since: snapshot.now),
+                updatedCounters,
+                .activityRecovered(idleSeconds: snapshot.idle)
+            )
         }
-        return (current, updatedCounters)
+        return (current, updatedCounters, nil)
     }
 
     private func driftOrAwayState(
         current: FocusState,
         counters: Counters,
         snapshot: TickSnapshot
-    ) -> (state: FocusState, counters: Counters) {
+    ) -> TickResult {
         var updatedCounters = counters
         let driftDuration = snapshot.now.timeIntervalSince(current.since)
         if driftDuration > thresholds.awayDelay, snapshot.presence.status != .present {
             updatedCounters.deserted.increment()
-            return (.away(since: snapshot.now), updatedCounters)
+            return (
+                .away(since: snapshot.now),
+                updatedCounters,
+                .driftTimeout(driftDuration: driftDuration)
+            )
         }
-        return (current, updatedCounters)
+        return (current, updatedCounters, nil)
     }
 }
 
@@ -441,7 +503,7 @@ public final class SessionEngine: ObservableObject {
         updateTimeline(phase: oldPhase, delta: delta)
         lastTickTime = now
 
-        let (newState, newCounters) = await machine.tick(
+        let (newState, newCounters, reason) = await machine.tick(
             current: state,
             counters: counters,
             siteIsDrift: isCurrentTargetDriftSite()
@@ -450,8 +512,46 @@ public final class SessionEngine: ObservableObject {
         focusState = newState
         counters = newCounters
 
+        if oldPhase != newPhase, let reason {
+            logTransition(from: oldPhase, to: newPhase, reason: reason, counters: newCounters)
+        }
+
         refreshWindowContext(for: newPhase)
         triggerDriftCallbackIfNeeded(from: oldPhase, to: newPhase)
+    }
+
+    /// FocusState遷移をcore.stateカテゴリに記録する (ADR-0018)
+    private func logTransition(
+        from oldPhase: FocusPhase,
+        to newPhase: FocusPhase,
+        reason: TransitionReason,
+        counters: Counters
+    ) {
+        switch reason {
+        case .idleAbsent(let idle),
+             .prolongedIdleWithPresence(let idle),
+             .desertion(let idle),
+             .activityRecovered(let idle):
+            Logger.coreState.info("""
+                transition \(oldPhase.rawValue, privacy: .public) → \(newPhase.rawValue, privacy: .public) \
+                reason=\(reason.name, privacy: .public) idle=\(idle, privacy: .public)s \
+                deserted=\(counters.deserted.value, privacy: .public) \
+                driftRecovered=\(counters.driftRecovered.value, privacy: .public) \
+                awayRecovered=\(counters.awayRecovered.value, privacy: .public)
+                """)
+        case .driftTimeout(let duration):
+            Logger.coreState.info("""
+                transition \(oldPhase.rawValue, privacy: .public) → \(newPhase.rawValue, privacy: .public) \
+                reason=\(reason.name, privacy: .public) duration=\(duration, privacy: .public)s \
+                deserted=\(counters.deserted.value, privacy: .public)
+                """)
+        case .driftSite:
+            let site = self.currentSite ?? self.currentApp
+            Logger.coreState.info("""
+                transition \(oldPhase.rawValue, privacy: .public) → \(newPhase.rawValue, privacy: .public) \
+                reason=\(reason.name, privacy: .public) site=\(site, privacy: .private)
+                """)
+        }
     }
 
     private func advanceElapsed(phase: FocusPhase, now: Date) -> TimeInterval {

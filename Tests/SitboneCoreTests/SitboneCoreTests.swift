@@ -18,7 +18,7 @@ final class FocusStateMachineTests: XCTestCase {
         let machine = FocusStateMachine(deps: deps)
         let initial = FocusState.flow(since: clock.now)
 
-        let (next, _) = await machine.tick(current: initial, counters: Counters())
+        let (next, _, _) = await machine.tick(current: initial, counters: Counters())
         XCTAssertEqual(next.phase, .flow)
     }
 
@@ -35,7 +35,7 @@ final class FocusStateMachineTests: XCTestCase {
         let machine = FocusStateMachine(deps: deps)
         let initial = FocusState.flow(since: clock.now)
 
-        let (next, _) = await machine.tick(current: initial, counters: Counters())
+        let (next, _, _) = await machine.tick(current: initial, counters: Counters())
         XCTAssertEqual(next.phase, .drift)
     }
 
@@ -52,7 +52,7 @@ final class FocusStateMachineTests: XCTestCase {
         let machine = FocusStateMachine(deps: deps)
         let initial = FocusState.drift(since: clock.now)
 
-        let (next, counters) = await machine.tick(current: initial, counters: Counters())
+        let (next, counters, _) = await machine.tick(current: initial, counters: Counters())
         XCTAssertEqual(next.phase, .flow)
         XCTAssertEqual(counters.driftRecovered.value, 1)
     }
@@ -70,7 +70,7 @@ final class FocusStateMachineTests: XCTestCase {
         let machine = FocusStateMachine(deps: deps)
         let initial = FocusState.away(since: clock.now)
 
-        let (next, counters) = await machine.tick(current: initial, counters: Counters())
+        let (next, counters, _) = await machine.tick(current: initial, counters: Counters())
         XCTAssertEqual(next.phase, .flow)
         XCTAssertEqual(counters.awayRecovered.value, 1)
     }

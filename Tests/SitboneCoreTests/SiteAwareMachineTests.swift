@@ -21,7 +21,7 @@ final class SiteAwareMachineTests: XCTestCase {
         let state = FocusState.flow(since: clock.now)
 
         // DRIFTサイトフラグをセット
-        let (next, _) = await machine.tick(
+        let (next, _, _) = await machine.tick(
             current: state, counters: Counters(), siteIsDrift: true
         )
         XCTAssertEqual(next.phase, .drift)
@@ -42,7 +42,7 @@ final class SiteAwareMachineTests: XCTestCase {
         let machine = FocusStateMachine(deps: deps)
         let state = FocusState.flow(since: clock.now)
 
-        let (next, _) = await machine.tick(
+        let (next, _, _) = await machine.tick(
             current: state, counters: Counters(), siteIsDrift: false
         )
         XCTAssertEqual(next.phase, .flow)  // idle=0, present → FLOW維持
@@ -64,7 +64,7 @@ final class SiteAwareMachineTests: XCTestCase {
         let state = FocusState.drift(since: clock.now)
 
         // DRIFTサイトではないので通常の復帰判定
-        let (next, counters) = await machine.tick(
+        let (next, counters, _) = await machine.tick(
             current: state, counters: Counters(), siteIsDrift: false
         )
         XCTAssertEqual(next.phase, .flow)

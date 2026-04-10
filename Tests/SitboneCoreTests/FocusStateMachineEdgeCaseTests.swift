@@ -24,7 +24,7 @@ struct FocusStateMachineEdgeCaseTests {
     func flowToAwayDirectTransition() async {
         let (machine, deps) = makeMachine(idle: 100, presence: .absent) // > t2(90)
         let state = FocusState.flow(since: deps.clock.now)
-        let (newState, counters) = await machine.tick(current: state, counters: Counters())
+        let (newState, counters, _) = await machine.tick(current: state, counters: Counters())
         #expect(newState.phase == .away)
         #expect(counters.deserted.value == 1)
     }
@@ -33,7 +33,7 @@ struct FocusStateMachineEdgeCaseTests {
     func flowToDriftWhenPresentAboveT2() async {
         let (machine, deps) = makeMachine(idle: 100, presence: .present)
         let state = FocusState.flow(since: deps.clock.now)
-        let (newState, counters) = await machine.tick(current: state, counters: Counters())
+        let (newState, counters, _) = await machine.tick(current: state, counters: Counters())
         #expect(newState.phase == .drift)
         #expect(counters.deserted.value == 0)
     }
@@ -54,7 +54,7 @@ struct FocusStateMachineEdgeCaseTests {
         // driftが始まったのが91秒前(> t2=90)
         let driftStart = clock.now.addingTimeInterval(-91)
         let state = FocusState.drift(since: driftStart)
-        let (newState, counters) = await machine.tick(
+        let (newState, counters, _) = await machine.tick(
             current: state, counters: Counters(), siteIsDrift: true
         )
         #expect(newState.phase == .away)
@@ -74,7 +74,7 @@ struct FocusStateMachineEdgeCaseTests {
         let machine = FocusStateMachine(deps: deps)
         let driftStart = clock.now.addingTimeInterval(-91)
         let state = FocusState.drift(since: driftStart)
-        let (newState, _) = await machine.tick(
+        let (newState, _, _) = await machine.tick(
             current: state, counters: Counters(), siteIsDrift: true
         )
         #expect(newState.phase == .drift)
@@ -93,7 +93,7 @@ struct FocusStateMachineEdgeCaseTests {
         let machine = FocusStateMachine(deps: deps)
         let driftStart = clock.now.addingTimeInterval(-10) // < t2
         let state = FocusState.drift(since: driftStart)
-        let (newState, _) = await machine.tick(
+        let (newState, _, _) = await machine.tick(
             current: state, counters: Counters(), siteIsDrift: true
         )
         #expect(newState.phase == .drift)
@@ -114,7 +114,7 @@ struct FocusStateMachineEdgeCaseTests {
         let machine = FocusStateMachine(deps: deps)
         let driftStart = clock.now.addingTimeInterval(-91)
         let state = FocusState.drift(since: driftStart)
-        let (newState, counters) = await machine.tick(current: state, counters: Counters())
+        let (newState, counters, _) = await machine.tick(current: state, counters: Counters())
         #expect(newState.phase == .away)
         #expect(counters.deserted.value == 1)
     }
@@ -125,7 +125,7 @@ struct FocusStateMachineEdgeCaseTests {
     func awayStaysWhenIdle() async {
         let (machine, deps) = makeMachine(idle: 30, presence: .absent)
         let state = FocusState.away(since: deps.clock.now)
-        let (newState, _) = await machine.tick(current: state, counters: Counters())
+        let (newState, _, _) = await machine.tick(current: state, counters: Counters())
         #expect(newState.phase == .away)
     }
 }
