@@ -12,4 +12,8 @@ extension Logger {
 
     /// システムスリープ/ウェイク、アプリ起動/終了
     static let coreLifecycle = Logger(subsystem: "com.sitbone", category: "core.lifecycle")
+
+    /// センサー融合のtick詳細とstatus変化
+    /// PresenceArbiter(SitboneCore)が emit するためSitboneCoreで宣言する
+    static let sensorsPresence = Logger(subsystem: "com.sitbone", category: "sensors.presence")
 }

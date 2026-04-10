@@ -20,6 +20,11 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
         set { enabledLock.withLock { $0 = newValue } }
     }
 
+    /// 直近のdetect()で観測されたstatus (ADR-0018: 変化検知用の内部状態)
+    var lastObservedStatus: PresenceStatus? {
+        lock.withLock { $0.lastStatus }
+    }
+
     public init(
         sensors: [any SensorProtocol],
         threshold: Double = 0.4,
@@ -61,6 +66,7 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
         let active = readings.filter { $0.reading.isPresent != nil }
 
         guard !active.isEmpty else {
+            recordObservation(status: .unknown, emaScore: 0)
             logEntry(readings: readings, rawScore: 0, emaScore: 0, status: .unknown)
             return PresenceReading(status: .unknown, confidence: 0)
         }
@@ -69,9 +75,32 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
         let smoothedScore = applyEMA(rawScore: rawScore)
         let status: PresenceStatus = smoothedScore >= threshold ? .present : .absent
 
+        Logger.sensorsPresence.debug("""
+            tick raw=\(rawScore, privacy: .public) ema=\(smoothedScore, privacy: .public) \
+            status=\(status.rawValue, privacy: .public)
+            """)
+
+        recordObservation(status: status, emaScore: smoothedScore)
         logEntry(readings: readings, rawScore: rawScore, emaScore: smoothedScore, status: status)
 
         return PresenceReading(status: status, confidence: smoothedScore)
+    }
+
+    /// status変化検知 + lastStatus更新 (ADR-0018)
+    /// 変化があったときのみinfoログを出力する
+    private func recordObservation(status: PresenceStatus, emaScore: Double) {
+        let previousStatus = lock.withLock { state -> PresenceStatus? in
+            let prev = state.lastStatus
+            state.lastStatus = status
+            return prev
+        }
+
+        if let previousStatus, previousStatus != status {
+            Logger.sensorsPresence.info("""
+                status \(previousStatus.rawValue, privacy: .public) → \(status.rawValue, privacy: .public) \
+                ema=\(emaScore, privacy: .public)
+                """)
+        }
     }
 
     private func logEntry(
@@ -143,6 +172,7 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
 
 private struct EMAState: Sendable {
     var value: Double?
+    var lastStatus: PresenceStatus?
 }
 
 struct SensorResult: Sendable {

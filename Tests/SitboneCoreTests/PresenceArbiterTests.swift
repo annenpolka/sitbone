@@ -235,4 +235,49 @@ struct PresenceArbiterTests {
             #expect(result.status == .present)
         }
     }
+
+    // MARK: - status変化検知 (ADR-0018)
+
+    struct StatusChangeTracking {
+        @Test("初回detect前はlastObservedStatusがnil")
+        func initialLastStatusIsNil() {
+            let arbiter = PresenceArbiter(sensors: [])
+            #expect(arbiter.lastObservedStatus == nil)
+        }
+
+        @Test("初回detect後にlastObservedStatusが記録される")
+        func firstDetectRecordsStatus() async {
+            let camera = MockSensor(
+                name: "camera", baseWeight: 0.50,
+                reading: SensorReading(isPresent: true)
+            )
+            let arbiter = PresenceArbiter(sensors: [camera])
+            _ = await arbiter.detect()
+            #expect(arbiter.lastObservedStatus == .present)
+        }
+
+        @Test("present→absentに変化するとlastObservedStatusが更新される")
+        func statusFlipsFromPresentToAbsent() async {
+            let camera = MockSensor(
+                name: "camera", baseWeight: 0.50,
+                reading: SensorReading(isPresent: true)
+            )
+            // alpha=1.0でEMA平滑化を無効化し、即座にabsentに切り替わるようにする
+            let arbiter = PresenceArbiter(sensors: [camera], emaAlpha: 1.0)
+
+            _ = await arbiter.detect()
+            #expect(arbiter.lastObservedStatus == .present)
+
+            camera.reading = SensorReading(isPresent: false)
+            _ = await arbiter.detect()
+            #expect(arbiter.lastObservedStatus == .absent)
+        }
+
+        @Test("センサーが空のときdetectすればlastObservedStatusはunknownになる")
+        func emptySensorsRecordUnknown() async {
+            let arbiter = PresenceArbiter(sensors: [])
+            _ = await arbiter.detect()
+            #expect(arbiter.lastObservedStatus == .unknown)
+        }
+    }
 }
