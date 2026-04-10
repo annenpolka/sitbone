@@ -377,14 +377,45 @@ func t1Boundary(idle: Double) {
 
 ### ログ
 
+詳細はADR-0018参照。
+
 - `print()`禁止。`os.Logger`を使う
-- カテゴリ: `core`, `sensors`, `ui`, `data`
+- カテゴリは7つに細分化:
+  - `core.state` — FocusState遷移
+  - `core.session` — セッション境界、プロファイル切替、Ghost Teacher、Site再分類
+  - `core.lifecycle` — システムスリープ/ウェイク、アプリ起動/終了
+  - `sensors.camera` — カメラセッション、デバイス初期化、フレームタイムアウト
+  - `sensors.presence` — センサー融合のtick詳細とstatus変化
+  - `ui.overlay` — ノッチオーバーレイ、Ghost Teacher UI、DRIFT音再生
+  - `data.store` — SessionRecord/profile/設定の保存・読込・失敗
+- 各モジュールの`Logging.swift`で `extension Logger` として宣言する
+  （カテゴリは emit するモジュールが宣言する原則）
+- レベル方針:
+  - `error` — 復帰不能な失敗
+  - `warning` — 機能劣化（カメラ初期化失敗など）
+  - `info` — 状態遷移、セッション境界、スリープ/ウェイク（常時観察対象）
+  - `debug` — presence毎tick、frame timeout（`log config --mode level:debug` で有効化）
+- Privacy: 数値・enum・状態名・アプリ名は `.public`、ウィンドウタイトル・サイト名・
+  ファイルパス・プロファイル名・分類値は `.private`
+- 観察例:
+  ```sh
+  # 通常観察 (info以上)
+  log stream --predicate 'subsystem == "com.sitbone"'
+  # 状態遷移だけ
+  log stream --predicate 'category == "core.state"'
+  # debug込み（事前に有効化が必要）
+  sudo log config --mode 'level:debug,private_data:on' --subsystem com.sitbone
+  log stream --predicate 'subsystem == "com.sitbone"' --level debug
+  ```
 
 ```swift
+// Sources/SitboneCore/Logging.swift
 import os
 extension Logger {
-    static let core = Logger(subsystem: "com.sitbone", category: "core")
-    static let sensors = Logger(subsystem: "com.sitbone", category: "sensors")
+    static let coreState     = Logger(subsystem: "com.sitbone", category: "core.state")
+    static let coreSession   = Logger(subsystem: "com.sitbone", category: "core.session")
+    static let coreLifecycle = Logger(subsystem: "com.sitbone", category: "core.lifecycle")
+    static let sensorsPresence = Logger(subsystem: "com.sitbone", category: "sensors.presence")
 }
 ```
 

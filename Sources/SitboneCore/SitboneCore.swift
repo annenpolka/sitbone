@@ -167,6 +167,7 @@ public enum TransitionReason: Sendable {
     }
 }
 
+// swiftlint:disable:next large_tuple
 public typealias TickResult = (state: FocusState, counters: Counters, reason: TransitionReason?)
 
 public final class FocusStateMachine: Sendable {
@@ -349,12 +350,16 @@ public final class SessionEngine: ObservableObject {
     /// カメラによるpresence検出の有効/無効
     @Published public var isCameraEnabled: Bool = true {
         didSet {
+            guard oldValue != isCameraEnabled else { return }
             if let arbiter = deps.presenceDetector as? PresenceArbiter {
                 arbiter.isEnabled = isCameraEnabled
                 if !isCameraEnabled {
                     arbiter.stopCamera()
                 }
             }
+            Logger.coreSession.info(
+                "camera presence \(self.isCameraEnabled ? "enabled" : "disabled", privacy: .public)"
+            )
         }
     }
 
@@ -415,6 +420,8 @@ public final class SessionEngine: ObservableObject {
         currentTimelinePhase = nil
         currentPhaseDuration = 0
 
+        Logger.coreSession.info("session started profile=\(self.activeProfile.name, privacy: .private)")
+
         startTickLoop()
     }
 
@@ -423,6 +430,7 @@ public final class SessionEngine: ObservableObject {
     /// スリープ前にカメラ停止 + tickループ停止
     public func handleSystemSleep() {
         guard isSessionActive else { return }
+        Logger.coreLifecycle.info("system sleep")
         // スリープ境界までの経過時間を確定
         if let state = focusState {
             let now = deps.clock.now
@@ -442,6 +450,7 @@ public final class SessionEngine: ObservableObject {
     /// ウェイク後にlastTickTimeリセット + tickループ再開
     public func handleSystemWake() {
         guard isSessionActive else { return }
+        Logger.coreLifecycle.info("system wake")
         // スリープ時間を破棄するためlastTickTimeをリセット
         lastTickTime = deps.clock.now
         // tickループ再開（カメラは遅延起動で自動復帰）
@@ -487,6 +496,16 @@ public final class SessionEngine: ObservableObject {
             lastSessionRecord = record
             saveSessionRecord(record)
         }
+
+        Logger.coreSession.info("""
+            session ended profile=\(self.activeProfile.name, privacy: .private) \
+            focused=\(self.focusedElapsed, privacy: .public)s \
+            total=\(self.totalElapsed, privacy: .public)s \
+            ratio=\(self.focusRatio, privacy: .public) \
+            deserted=\(self.counters.deserted.value, privacy: .public) \
+            driftRecovered=\(self.counters.driftRecovered.value, privacy: .public) \
+            awayRecovered=\(self.counters.awayRecovered.value, privacy: .public)
+            """)
 
         // セッション累積データを保存
         saveCumulativeData()
@@ -672,32 +691,18 @@ public final class SessionEngine: ObservableObject {
     /// プロファイルを切替（セッション分割）
     public func switchProfile(to profile: SessionProfile) {
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
+        guard profile.id != activeProfile.id else { return }
+
+        Logger.coreSession.info("""
+            profile switched \(self.activeProfile.name, privacy: .private) \
+            → \(profile.name, privacy: .private)
+            """)
 
         if persistenceEnabled {
             saveClassificationsForActiveProfile()
         }
-
         if isSessionActive {
-            // セッション分割: 現プロファイルの累計に加算 + SessionRecord保存
-            let timeline = flushTimeline()
-            if let startedAt = sessionStartedAt {
-                let now = deps.clock.now
-                let record = SessionRecord(
-                    type: activeProfile.name,
-                    startedAt: startedAt,
-                    endedAt: now,
-                    realElapsed: totalElapsed,
-                    focusedElapsed: focusedElapsed,
-                    focusRatio: focusRatio,
-                    driftRecovered: counters.driftRecovered.value,
-                    awayRecovered: counters.awayRecovered.value,
-                    deserted: counters.deserted.value,
-                    timeline: timeline
-                )
-                lastSessionRecord = record
-                saveSessionRecord(record)
-            }
-            saveCumulativeData()
+            saveActiveSessionForProfileSwitch()
         }
 
         // プロファイル切替: SiteObserverを差し替え
@@ -708,18 +713,8 @@ public final class SessionEngine: ObservableObject {
             siteObservers[profile.id] = newObserver
         }
 
-        // セッションリセット
         if isSessionActive {
-            let now = deps.clock.now
-            focusState = .flow(since: now)
-            counters = Counters()
-            focusedElapsed = 0
-            totalElapsed = 0
-            sessionStartedAt = now
-            lastTickTime = now
-            timelineBlocks = []
-            currentTimelinePhase = nil
-            currentPhaseDuration = 0
+            resetSessionForProfileSwitch()
         }
 
         // 新プロファイルの累計をロード（クロス汚染防止）
@@ -729,6 +724,43 @@ public final class SessionEngine: ObservableObject {
             loadClassificationsForProfile(profile)
             loadCumulativeData()
         }
+    }
+
+    /// プロファイル切替時に、現プロファイルのセッションを保存する
+    private func saveActiveSessionForProfileSwitch() {
+        let timeline = flushTimeline()
+        if let startedAt = sessionStartedAt {
+            let now = deps.clock.now
+            let record = SessionRecord(
+                type: activeProfile.name,
+                startedAt: startedAt,
+                endedAt: now,
+                realElapsed: totalElapsed,
+                focusedElapsed: focusedElapsed,
+                focusRatio: focusRatio,
+                driftRecovered: counters.driftRecovered.value,
+                awayRecovered: counters.awayRecovered.value,
+                deserted: counters.deserted.value,
+                timeline: timeline
+            )
+            lastSessionRecord = record
+            saveSessionRecord(record)
+        }
+        saveCumulativeData()
+    }
+
+    /// プロファイル切替後、新プロファイル用にセッション状態をリセットする
+    private func resetSessionForProfileSwitch() {
+        let now = deps.clock.now
+        focusState = .flow(since: now)
+        counters = Counters()
+        focusedElapsed = 0
+        totalElapsed = 0
+        sessionStartedAt = now
+        lastTickTime = now
+        timelineBlocks = []
+        currentTimelinePhase = nil
+        currentPhaseDuration = 0
     }
 
     /// プロファイル名を変更
@@ -753,12 +785,26 @@ public final class SessionEngine: ObservableObject {
 
     /// Ghost Teacherの回答: サイトをFLOW/DRIFTに分類
     public func classifySite(_ site: String, as classification: SiteSuggestion) {
+        let previous = siteObserver.effectiveClassification(for: site)
         siteObserver.classify(site: site, as: classification)
         if pendingGhostTeacher == site {
             pendingGhostTeacher = nil
         }
         if persistenceEnabled {
             saveClassifications()
+        }
+        Logger.coreSession.info("""
+            site classified site=\(site, privacy: .private) \
+            previous=\(Self.suggestionName(previous), privacy: .public) → \
+            \(Self.suggestionName(classification), privacy: .public)
+            """)
+    }
+
+    private static func suggestionName(_ suggestion: SiteSuggestion) -> String {
+        switch suggestion {
+        case .flow:      return "flow"
+        case .drift:     return "drift"
+        case .undecided: return "undecided"
         }
     }
 

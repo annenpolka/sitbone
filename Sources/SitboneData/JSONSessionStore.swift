@@ -1,6 +1,7 @@
 // JSONSessionStore — ファイルベースのSessionStoreProtocol実装
 
 public import Foundation
+import os
 
 public final class JSONSessionStore: SessionStoreProtocol, @unchecked Sendable {
     private let baseDir: URL
@@ -37,16 +38,32 @@ public final class JSONSessionStore: SessionStoreProtocol, @unchecked Sendable {
     // MARK: - Cumulative
 
     public func saveCumulative(_ record: CumulativeRecord) async throws {
-        let data = try encoder.encode(record)
-        try data.write(to: cumulativeURL, options: .atomic)
+        do {
+            let data = try encoder.encode(record)
+            try data.write(to: cumulativeURL, options: .atomic)
+        } catch {
+            Logger.dataStore.error("""
+                cumulative save failed path=\(self.cumulativeURL.path, privacy: .private) \
+                error=\(error.localizedDescription, privacy: .public)
+                """)
+            throw error
+        }
     }
 
     public func loadCumulative() async throws -> CumulativeRecord {
         guard FileManager.default.fileExists(atPath: cumulativeURL.path) else {
             return CumulativeRecord()
         }
-        let data = try Data(contentsOf: cumulativeURL)
-        return try decoder.decode(CumulativeRecord.self, from: data)
+        do {
+            let data = try Data(contentsOf: cumulativeURL)
+            return try decoder.decode(CumulativeRecord.self, from: data)
+        } catch {
+            Logger.dataStore.error("""
+                cumulative load failed path=\(self.cumulativeURL.path, privacy: .private) \
+                error=\(error.localizedDescription, privacy: .public)
+                """)
+            throw error
+        }
     }
 
     // MARK: - Sessions
@@ -55,17 +72,32 @@ public final class JSONSessionStore: SessionStoreProtocol, @unchecked Sendable {
         let key = dateFormatter.string(from: record.startedAt)
         let url = sessionsDir.appendingPathComponent("\(key).json")
 
-        var day: DayRecord
-        if FileManager.default.fileExists(atPath: url.path) {
-            let data = try Data(contentsOf: url)
-            day = try decoder.decode(DayRecord.self, from: data)
-            day.sessions.append(record)
-        } else {
-            day = DayRecord(date: key, sessions: [record])
-        }
+        do {
+            var day: DayRecord
+            if FileManager.default.fileExists(atPath: url.path) {
+                let data = try Data(contentsOf: url)
+                day = try decoder.decode(DayRecord.self, from: data)
+                day.sessions.append(record)
+            } else {
+                day = DayRecord(date: key, sessions: [record])
+            }
 
-        let data = try encoder.encode(day)
-        try data.write(to: url, options: .atomic)
+            let data = try encoder.encode(day)
+            try data.write(to: url, options: .atomic)
+
+            Logger.dataStore.info("""
+                session saved key=\(key, privacy: .public) \
+                sessionsInDay=\(day.sessions.count, privacy: .public) \
+                path=\(url.path, privacy: .private)
+                """)
+        } catch {
+            Logger.dataStore.error("""
+                session save failed key=\(key, privacy: .public) \
+                path=\(url.path, privacy: .private) \
+                error=\(error.localizedDescription, privacy: .public)
+                """)
+            throw error
+        }
     }
 
     public func loadDay(_ date: String) async throws -> DayRecord? {
@@ -73,7 +105,16 @@ public final class JSONSessionStore: SessionStoreProtocol, @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
-        let data = try Data(contentsOf: url)
-        return try decoder.decode(DayRecord.self, from: data)
+        do {
+            let data = try Data(contentsOf: url)
+            return try decoder.decode(DayRecord.self, from: data)
+        } catch {
+            Logger.dataStore.error("""
+                day load failed date=\(date, privacy: .public) \
+                path=\(url.path, privacy: .private) \
+                error=\(error.localizedDescription, privacy: .public)
+                """)
+            throw error
+        }
     }
 }

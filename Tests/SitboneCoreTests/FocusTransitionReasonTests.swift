@@ -197,11 +197,10 @@ struct TransitionReasonNameTests {
             (.desertion(idleSeconds: 0), "desertion"),
             (.driftSite, "drift_site"),
             (.activityRecovered(idleSeconds: 0), "activity_recovered"),
-            (.driftTimeout(driftDuration: 0), "drift_timeout"),
+            (.driftTimeout(driftDuration: 0), "drift_timeout")
         ]
         for (reason, expected) in cases {
             #expect(reason.name == expected)
         }
     }
 }
-
