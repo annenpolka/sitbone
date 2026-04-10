@@ -36,7 +36,6 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
     private var startupContinuations: [CheckedContinuation<CGImage?, Never>] = []
 
     private var bufferDelegate: BufferDelegate?
-    private let logger = Logger(subsystem: "com.sitbone", category: "sensors")
 
     public init() {}
 
@@ -101,7 +100,7 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
                         guard let self, !self.startupContinuations.isEmpty else { return }
                         let pending = self.startupContinuations
                         self.startupContinuations = []
-                        self.logger.debug("フレーム取得タイムアウト")
+                        Logger.sensorsCamera.debug("frame capture timeout")
                         for cont in pending {
                             cont.resume(returning: nil)
                         }
@@ -122,7 +121,7 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
 
             session.startRunning()
             isRunning = true
-            logger.info("カメラセッション開始")
+            Logger.sensorsCamera.info("session started")
         }
     }
 
@@ -134,7 +133,7 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
             .builtInWideAngleCamera, for: .video, position: .front
         ) ?? AVCaptureDevice.default(for: .video),
               let input = try? AVCaptureDeviceInput(device: device) else {
-            logger.warning("カメラデバイス初期化失敗")
+            Logger.sensorsCamera.warning("device init failed")
             session.commitConfiguration()
             return
         }
@@ -186,7 +185,7 @@ public final class AVCameraFrameProvider: CameraFrameProviderProtocol, @unchecke
                 state.image = nil
                 state.capturedAt = nil
             }
-            self.logger.info("カメラセッション停止")
+            Logger.sensorsCamera.info("session stopped")
         }
     }
 }

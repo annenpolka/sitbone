@@ -1,7 +1,8 @@
-// PresenceCSVLogger — センサー融合結果のCSV + os.Logger出力
+// PresenceCSVLogger — センサー融合結果のCSV書き出し
+// ADR-0018: os.Logger出力はPresenceArbiterに移管。CSVファイル書き込み専任。
 
-import os
 import Foundation
+import os
 import SitboneSensors
 
 // MARK: - PresenceLogEntry
@@ -25,7 +26,6 @@ struct SensorLogItem: Sendable {
 final class PresenceCSVLogger: @unchecked Sendable {
     private let fileHandle: FileHandle?
     private let lock = OSAllocatedUnfairLock<Void>(initialState: ())
-    private let osLogger = Logger(subsystem: "com.sitbone", category: "presence")
     private let dateFormatter: ISO8601DateFormatter
 
     init(directory: URL? = nil) {
@@ -54,24 +54,9 @@ final class PresenceCSVLogger: @unchecked Sendable {
                       "gaze_present", "gaze_confidence", "raw_score", "ema_score", "status"]
         let header = fields.joined(separator: ",") + "\n"
         fileHandle?.write(Data(header.utf8))
-
-        osLogger.info("CSV logging started: \(fileURL.path)")
     }
 
     func log(_ entry: PresenceLogEntry) {
-        // os.Logger出力
-        let sensorSummary = entry.sensorReadings
-            .map { item in
-                let present = item.isPresent.map { String($0) } ?? "N/A"
-                return "\(item.name)=\(present)(\(String(format: "%.2f", item.confidence)))"
-            }
-            .joined(separator: " ")
-        let raw = String(format: "%.3f", entry.rawScore)
-        let ema = String(format: "%.3f", entry.emaScore)
-
-        osLogger.debug("presence: \(sensorSummary) raw=\(raw) ema=\(ema) → \(entry.status.rawValue)")
-
-        // CSV出力
         guard let fileHandle else { return }
 
         let cameraSensor = entry.sensorReadings.first { $0.name == "camera" }
