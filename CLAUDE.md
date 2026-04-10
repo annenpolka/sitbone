@@ -399,14 +399,24 @@ func t1Boundary(idle: Double) {
   ファイルパス・プロファイル名・分類値は `.private`
 - 観察例:
   ```sh
-  # 通常観察 (info以上)
-  log stream --predicate 'subsystem == "com.sitbone"'
-  # 状態遷移だけ
-  log stream --predicate 'category == "core.state"'
+  # 通常観察 (info以上) — `--level info` が必須
+  /usr/bin/log stream --predicate 'subsystem == "com.sitbone"' --level info --style compact
+
+  # 状態遷移だけ (category値はサブシステム接頭なしの "core.state")
+  /usr/bin/log stream --predicate 'subsystem == "com.sitbone" AND category == "core.state"' --level info --style compact
+
   # debug込み（事前に有効化が必要）
-  sudo log config --mode 'level:debug,private_data:on' --subsystem com.sitbone
-  log stream --predicate 'subsystem == "com.sitbone"' --level debug
+  sudo /usr/bin/log config --mode 'level:debug,private_data:on' --subsystem com.sitbone
+  /usr/bin/log stream --predicate 'subsystem == "com.sitbone"' --level debug --style compact
   ```
+- 観察時の注意:
+  - `log stream` のデフォルトレベルは `default`(notice) で、`.info` は流れない。
+    `--level info` を明示しないと状態遷移ログが**全部捨てられる**ので必ず付ける
+  - zshの組み込み `log`(login履歴コマンド) と衝突する。コマンドは
+    `/usr/bin/log` でフルパス指定する（`alias log=/usr/bin/log` でもよい）
+  - `.private` 補間値はデフォルトで `<private>` に潰される。展開したいときだけ
+    `sudo log config --mode private_data:on --subsystem com.sitbone` を一度叩く
+    （ユーザー機ではOFFのままが正解）
 
 ```swift
 // Sources/SitboneCore/Logging.swift
