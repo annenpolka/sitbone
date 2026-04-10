@@ -8,7 +8,10 @@ public import SitboneSensors
 
 public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendable {
     private let sensors: [any SensorProtocol]
-    private let threshold: Double
+    /// ADR-0019: present復帰のための上限閾値
+    private let presentThreshold: Double
+    /// ADR-0019: absent離脱のための下限閾値
+    private let absentThreshold: Double
     private let emaAlpha: Double
     private let lock = OSAllocatedUnfairLock(initialState: EMAState())
     private let csvLogger: PresenceCSVLogger?
@@ -27,12 +30,18 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
 
     public init(
         sensors: [any SensorProtocol],
-        threshold: Double = 0.4,
+        presentThreshold: Double = 0.45,
+        absentThreshold: Double = 0.35,
         emaAlpha: Double = 0.3,
         frameProvider: (any CameraFrameProviderProtocol)? = nil
     ) {
+        precondition(
+            presentThreshold > absentThreshold,
+            "presentThreshold must be greater than absentThreshold (got \(presentThreshold) vs \(absentThreshold))"
+        )
         self.sensors = sensors
-        self.threshold = threshold
+        self.presentThreshold = presentThreshold
+        self.absentThreshold = absentThreshold
         self.emaAlpha = emaAlpha
         self.csvLogger = nil
         self.frameProvider = frameProvider
@@ -40,13 +49,19 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
 
     init(
         sensors: [any SensorProtocol],
-        threshold: Double = 0.4,
+        presentThreshold: Double = 0.45,
+        absentThreshold: Double = 0.35,
         emaAlpha: Double = 0.3,
         csvLogger: PresenceCSVLogger?,
         frameProvider: (any CameraFrameProviderProtocol)? = nil
     ) {
+        precondition(
+            presentThreshold > absentThreshold,
+            "presentThreshold must be greater than absentThreshold (got \(presentThreshold) vs \(absentThreshold))"
+        )
         self.sensors = sensors
-        self.threshold = threshold
+        self.presentThreshold = presentThreshold
+        self.absentThreshold = absentThreshold
         self.emaAlpha = emaAlpha
         self.csvLogger = csvLogger
         self.frameProvider = frameProvider
@@ -73,7 +88,7 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
 
         let rawScore = calculateWeightedScore(active: active)
         let smoothedScore = applyEMA(rawScore: rawScore)
-        let status: PresenceStatus = smoothedScore >= threshold ? .present : .absent
+        let status = applyHysteresis(smoothedScore: smoothedScore)
 
         Logger.sensorsPresence.debug("""
             tick raw=\(rawScore, privacy: .public) ema=\(smoothedScore, privacy: .public) \
@@ -84,6 +99,20 @@ public final class PresenceArbiter: PresenceDetectorProtocol, @unchecked Sendabl
         logEntry(readings: readings, rawScore: rawScore, emaScore: smoothedScore, status: status)
 
         return PresenceReading(status: status, confidence: smoothedScore)
+    }
+
+    /// 二重閾値ヒステリシスでstatusを判定する (ADR-0019)
+    /// - present継続中: absentThreshold(0.35)を下回ったときだけabsentに離脱
+    /// - absent/初回(nil)/unknown: presentThreshold(0.45)を超えたときだけpresentに昇格
+    /// - 中間域[0.35, 0.45]では現状維持
+    private func applyHysteresis(smoothedScore: Double) -> PresenceStatus {
+        let previous = lock.withLock { $0.lastStatus }
+        switch previous {
+        case .present:
+            return smoothedScore < absentThreshold ? .absent : .present
+        case .absent, .unknown, .none:
+            return smoothedScore >= presentThreshold ? .present : .absent
+        }
     }
 
     /// status変化検知 + lastStatus更新 (ADR-0018)

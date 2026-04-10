@@ -280,4 +280,5 @@ struct PresenceArbiterTests {
             #expect(arbiter.lastObservedStatus == .unknown)
         }
     }
+
 }
