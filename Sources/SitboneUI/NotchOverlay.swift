@@ -764,17 +764,22 @@ struct NotchDropdown: View {
                     .foregroundStyle(.white.opacity(0.3))
                     .padding(.vertical, 8)
             } else {
-                ForEach(sites.prefix(8), id: \.site) { item in
-                    LiveRiverRow(
-                        site: item.site,
-                        suggestion: item.suggestion,
-                        totalTime: item.entry.totalTime,
-                        onClassify: { classification in
-                            engine.siteObserver.classify(site: item.site, as: classification)
-                            engine.objectWillChange.send()
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        ForEach(sites, id: \.site) { item in
+                            LiveRiverRow(
+                                site: item.site,
+                                suggestion: item.suggestion,
+                                totalTime: item.entry.totalTime,
+                                onClassify: { classification in
+                                    engine.siteObserver.classify(site: item.site, as: classification)
+                                    engine.objectWillChange.send()
+                                }
+                            )
                         }
-                    )
+                    }
                 }
+                .frame(maxHeight: 160)
             }
 
             // 凡例
