@@ -75,6 +75,41 @@ app: compile
 run: app
 	@open $(APP_BUNDLE)
 
+# ローカルインストール (release ビルドを /Applications にコピー)
+APP_BUNDLE_RELEASE = .build/release/$(APP_NAME).app
+BINARY_RELEASE     = .build/release/$(APP_NAME)
+CONTENTS_RELEASE   = $(APP_BUNDLE_RELEASE)/Contents
+INSTALL_DIR       ?= /Applications
+
+compile-release: | $(LOG_DIR)
+	swift build -c release 2>&1 | tee $(LOG_DIR)/compile-release.log
+
+app-release: compile-release
+	@rm -rf $(APP_BUNDLE_RELEASE)
+	@mkdir -p $(CONTENTS_RELEASE)/MacOS $(CONTENTS_RELEASE)/Resources
+	@cp $(BINARY_RELEASE) $(CONTENTS_RELEASE)/MacOS/$(APP_NAME)
+	@cp -r Sources/Sitbone/Resources/Assets.xcassets $(CONTENTS_RELEASE)/Resources/ 2>/dev/null || true
+	@cp Sources/Sitbone/Info.plist $(CONTENTS_RELEASE)/Info.plist
+	@codesign --force --sign "Sitbone Dev" $(APP_BUNDLE_RELEASE)
+	@echo "=== $(APP_BUNDLE_RELEASE) ready ==="
+
+install: app-release
+	@if pgrep -x $(APP_NAME) >/dev/null; then \
+		echo "!! $(APP_NAME) is running. Quit it first, then retry 'make install'."; \
+		exit 1; \
+	fi
+	@if [ ! -w "$(INSTALL_DIR)" ]; then \
+		echo "!! $(INSTALL_DIR) is not writable. Try: sudo make install  or  make install INSTALL_DIR=~/Applications"; \
+		exit 1; \
+	fi
+	@rm -rf "$(INSTALL_DIR)/$(APP_NAME).app"
+	@cp -R $(APP_BUNDLE_RELEASE) "$(INSTALL_DIR)/"
+	@echo "=== Installed to $(INSTALL_DIR)/$(APP_NAME).app ==="
+
+uninstall:
+	@rm -rf "$(INSTALL_DIR)/$(APP_NAME).app"
+	@echo "=== Removed $(INSTALL_DIR)/$(APP_NAME).app ==="
+
 # 全検証（早いフェーズで失敗すれば後続は不要）
 verify: compile lint test-unit test-asan test-tsan test-ubsan
 	@echo "=== All verification phases passed ==="

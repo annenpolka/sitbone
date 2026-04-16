@@ -32,6 +32,13 @@ make app
 # .appバンドルで起動
 make run
 
+# /Applications にインストール (release ビルド)
+make install
+# ユーザーディレクトリに入れたい場合
+make install INSTALL_DIR=~/Applications
+# アンインストール
+make uninstall
+
 # テスト
 swift test
 
