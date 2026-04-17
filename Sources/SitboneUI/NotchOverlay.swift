@@ -536,22 +536,26 @@ struct NotchDropdown: View {
             Color.clear
                 .frame(height: notchHeight)
 
-            // 下部: ドロップダウン
-            if engine.isSessionActive {
-                dropdownContent
-                    .background(GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ContentHeightKey.self,
-                            value: geo.size.height
-                        )
-                    })
-                    .onPreferenceChange(ContentHeightKey.self) { height in
-                        hoverState.contentHeight = height
-                    }
-                    .offset(y: isHovering ? 0 : -120)
-                    .opacity(isHovering ? 1 : 0)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isHovering)
+            // 下部: ドロップダウン (ADR-0020: 非セッション時も開始ボタンを表示)
+            Group {
+                if engine.isSessionActive {
+                    dropdownContent
+                } else {
+                    IdleNotchDropdown(engine: engine, notchWidth: notchWidth)
+                }
             }
+            .background(GeometryReader { geo in
+                Color.clear.preference(
+                    key: ContentHeightKey.self,
+                    value: geo.size.height
+                )
+            })
+            .onPreferenceChange(ContentHeightKey.self) { height in
+                hoverState.contentHeight = height
+            }
+            .offset(y: isHovering ? 0 : -120)
+            .opacity(isHovering ? 1 : 0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isHovering)
 
             Spacer(minLength: 0)
         }
@@ -563,11 +567,13 @@ struct NotchDropdown: View {
 
     private var dropdownContent: some View {
         VStack(spacing: 0) {
-            // Profile Pills（最上段）
-            profilePills
-                .padding(.horizontal, 8)
-                .padding(.top, 6)
-                .padding(.bottom, 4)
+            // Profile Pills + End（最上段）
+            ProfilePills(engine: engine) {
+                EndSessionButton(engine: engine)
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
 
             if showRiver {
                 riverContent
@@ -587,55 +593,6 @@ struct NotchDropdown: View {
             .padding(.top, -50)
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showRiver)
-    }
-
-    // MARK: Profile Pills
-
-    private var profilePills: some View {
-        HStack(spacing: 4) {
-            ForEach(engine.profiles) { profile in
-                let isActive = profile.id == engine.activeProfile.id
-                Button {
-                    if !isActive {
-                        engine.switchProfile(to: profile)
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(Color(hue: profile.colorHue, saturation: 0.7, brightness: isActive ? 0.9 : 0.4))
-                            .frame(width: 5, height: 5)
-                        Text(profile.name)
-                            .font(.system(size: 8, weight: isActive ? .bold : .regular))
-                            .foregroundStyle(isActive ? .white : .white.opacity(0.35))
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(isActive
-                                  ? Color(hue: profile.colorHue, saturation: 0.5, brightness: 0.3)
-                                  : .white.opacity(0.05))
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-
-            // [+] 新規作成: ワンタップで自動命名して作成
-            Button {
-                let name = "profile \(engine.profiles.count)"
-                let profile = engine.createProfile(name: name)
-                engine.switchProfile(to: profile)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.25))
-                    .frame(width: 16, height: 16)
-                    .background(Circle().fill(.white.opacity(0.05)))
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
-        }
     }
 
     // MARK: Stats view
@@ -800,6 +757,138 @@ struct NotchDropdown: View {
     }
 
     private var phaseColor: Color { notchDropdownPhaseColor(engine: engine) }
+}
+
+// MARK: - Profile Pills (NotchDropdown / IdleNotchDropdown 共通)
+
+struct ProfilePills<Trailing: View>: View {
+    @ObservedObject var engine: SessionEngine
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(engine.profiles) { profile in
+                let isActive = profile.id == engine.activeProfile.id
+                Button {
+                    if !isActive {
+                        engine.switchProfile(to: profile)
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color(hue: profile.colorHue, saturation: 0.7, brightness: isActive ? 0.9 : 0.4))
+                            .frame(width: 5, height: 5)
+                        Text(profile.name)
+                            .font(.system(size: 8, weight: isActive ? .bold : .regular))
+                            .foregroundStyle(isActive ? .white : .white.opacity(0.35))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(isActive
+                                  ? Color(hue: profile.colorHue, saturation: 0.5, brightness: 0.3)
+                                  : .white.opacity(0.05))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                let name = "profile \(engine.profiles.count)"
+                let profile = engine.createProfile(name: name)
+                engine.switchProfile(to: profile)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.25))
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(.white.opacity(0.05)))
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            trailing()
+        }
+    }
+}
+
+extension ProfilePills where Trailing == EmptyView {
+    init(engine: SessionEngine) {
+        self.init(engine: engine, trailing: { EmptyView() })
+    }
+}
+
+// MARK: - End Session Button (ADR-0020: セッション中にノッチから停止)
+
+struct EndSessionButton: View {
+    @ObservedObject var engine: SessionEngine
+
+    var body: some View {
+        Button {
+            engine.endSession()
+        } label: {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(.white.opacity(0.55))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(.white.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+        .help("End Session")
+    }
+}
+
+// MARK: - Idle Notch Dropdown (ADR-0020: 非セッション時にStart Sessionを提示)
+
+struct IdleNotchDropdown: View {
+    @ObservedObject var engine: SessionEngine
+    let notchWidth: CGFloat
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ProfilePills(engine: engine)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+
+            Button {
+                engine.startSession()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Start Session")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(.white.opacity(0.92))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(
+                        Color(
+                            hue: engine.activeProfile.colorHue,
+                            saturation: 0.55,
+                            brightness: 0.45
+                        )
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 10)
+        }
+        .frame(width: notchWidth)
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 12,
+                bottomTrailingRadius: 12,
+                topTrailingRadius: 0
+            )
+            .fill(.black)
+            .padding(.top, -50)
+        )
+    }
 }
 
 // MARK: - Wing Shape (notch側が直角、外側が角丸)
